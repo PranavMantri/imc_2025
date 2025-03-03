@@ -19,7 +19,7 @@ class Trader:
 
 
 			curr_pos = state.position.get('RAINFOREST_RESIN', 0)
-			if curr_pos:
+			if abs(curr_pos) == rr_pos_lim:
 				orders.append(Order(product, rr_trade_around, -curr_pos))
 				continue
 			buy_len = len(od.buy_orders)
@@ -29,9 +29,9 @@ class Trader:
 			bs = min(od.sell_orders.keys()) if sell_len else 0  # Best ask
 
 			mbp = 0
-			mbv = 1
+			mbv = 4
 			msp = 0
-			msv = -1
+			msv = -4
 
 			# Placing limit orders at strategic price points
 			if bb < rr_trade_around:
