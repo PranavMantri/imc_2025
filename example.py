@@ -29,9 +29,9 @@ class Trader:
 			bs = min(od.sell_orders.keys()) if sell_len else 0  # Best ask
 
 			mbp = 0
-			mbv = 20
+			mbv = 1
 			msp = 0
-			msv = -20
+			msv = -1
 
 			# Placing limit orders at strategic price points
 			if bb < rr_trade_around:
