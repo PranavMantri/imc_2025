@@ -134,6 +134,35 @@ resin_max_pos = 50
 
 class Trader:
     
+    def market_take(self, state:TradingState, product:str, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
+        orders: List[Order] = []
+        od = state.order_depths
+        
+        curr_pos = state.position.get(product, 0)
+        buy_len = len(od[product].buy_orders)
+        sell_len = len(od[product].sell_orders)
+        
+        bb = max(od[product].buy_orders) if buy_len else 0
+        bs = min(od[product].sell_orders) if sell_len else 0
+                
+        
+        #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
+        #This should be much more dynamic. 
+        mbv = 20
+        msv = -20
+        
+        if (curr_pos != 0):
+            orders.append(Order(product, rr_trade_around, -curr_pos))
+        
+        #market taking code
+        if (bs < rr_trade_around):
+            orders.append(Order(product, bs, mbv))
+        if (bb > rr_trade_around):
+            orders.append(Order(product, bb, msv))
+        
+        result[product] = orders
+
+        return result
     def market_make(self, state:TradingState, product:str, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
         orders: List[Order] = []
         od = state.order_depths
@@ -149,15 +178,18 @@ class Trader:
         
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         #This should be much more dynamic. 
-        mbv = 20
-        msv = -20
+        mbv = 25
+        msv = -25
         
         if (curr_pos != 0):
             orders.append(Order(product, rr_trade_around, -curr_pos))
         
+        #market making code
+        
         if (gap >= 2):
             orders.append(Order(product, bb + 1, mbv))
             orders.append(Order(product, bs -1 , msv))
+        
         
         result[product] = orders
 
@@ -168,7 +200,7 @@ class Trader:
         result: Dict[str, List[Order]] = {}
 
 		
-        result = self.market_make(state, 'RAINFOREST_RESIN', result)
+        result = self.market_take(state, 'RAINFOREST_RESIN', result)
 
         print ("results are")
         print(result)
