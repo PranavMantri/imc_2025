@@ -1,11 +1,9 @@
 import json
 from typing import Any
 
-from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState, Dict, List
+from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 
-'''
-EVERYTHING BELOW HERE NEEDED FOR BT VISUALIZER
-'''
+
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
@@ -120,62 +118,16 @@ class Logger:
         return value[: max_length - 3] + "..."
 
 
-
 logger = Logger()
-'''
-EVERYTHING ABOVE HERE NEEDED FOR BT VISUALIZER
-'''
-
-#GLOBALS
-rr_trade_around = 10000
-resin_max_pos = 50
-
 
 
 class Trader:
-    
-    def market_make(self, state:TradingState, product:str, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
-        orders: List[Order] = []
-        od = state.order_depths
-        
-        curr_pos = state.position.get(product, 0)
-        buy_len = len(od[product].buy_orders)
-        sell_len = len(od[product].sell_orders)
-        
-        bb = max(od[product].buy_orders) if buy_len else 0
-        bs = min(od[product].sell_orders) if sell_len else 0
-        gap = bs - bb if bb and bs else -1
-        
-        
-        #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
-        #This should be much more dynamic. 
-        mbv = 20
-        msv = -20
-        
-        if (curr_pos != 0):
-            orders.append(Order(product, rr_trade_around, -curr_pos))
-        
-        if (gap >= 2):
-            orders.append(Order(product, bb + 1, mbv))
-            orders.append(Order(product, bs -1 , msv))
-        
-        result[product] = orders
+    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
+        result = {}
+        conversions = 0
+        trader_data = ""
 
-        return result
-    
-    def run(self, state: TradingState):
+        # TODO: Add logic
 
-        result: Dict[str, List[Order]] = {}
-
-		
-        result = self.market_make(state, 'RAINFOREST_RESIN', result)
-
-        print ("results are")
-        print(result)
-        
-        traderData = "SAMPLE"  
-        conversions = 1
-        logger.flush(state, result, conversions, traderData)
-        
-        return result, conversions, traderData
-    
+        logger.flush(state, result, conversions, trader_data)
+        return result, conversions, trader_data

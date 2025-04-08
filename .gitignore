@@ -1,4 +1,6 @@
 /venv
 /backtests
 /rainforest_resin
+/algo_trades/backtests
+/algo_trades/rr/backtests
 __pycache__
