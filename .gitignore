@@ -1,1 +1,4 @@
 /venv
+/backtests
+/rainforest_resin
+__pycache__
