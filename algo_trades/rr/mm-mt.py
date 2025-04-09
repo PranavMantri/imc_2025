@@ -143,7 +143,7 @@ class Sideways_Product:
     mt_bv = 0
     mt_sv = 0
 
-class Resin():
+class Resin(Sideways_Product):
     def __init__(self, state:TradingState):
         self.name = 'RAINFOREST_RESIN'
         self.od = state.order_depths['RAINFOREST_RESIN']
@@ -157,6 +157,25 @@ class Resin():
         self.curr_buy_pos = 0
         
         #OPTIMIZABLE VARS
+        self.mm_bv = 5
+        self.mm_sv = -5
+        self.mt_bv = 20
+        self.mt_sv = -20
+
+class Kelp(Sideways_Product):
+    def __init__(self, state:TradingState):
+        self.name = 'KELP'
+        self.od = state.order_depths['KELP']
+        self.trade_around = 10000
+        self.max_pos = 50
+        self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 10000
+        self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 10000
+        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
+        self.curr_pos = state.position.get('KELP', 0)
+        self.curr_sell_pos = 0
+        self.curr_buy_pos = 0
+        
+        #OPTIMIZABLE VARS
         self.mm_bv = 20
         self.mm_sv = -20
         self.mt_bv = 20
@@ -165,59 +184,81 @@ class Resin():
 
 class Trader:
 
-    def market_take(self, prod:Sideways_Product, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
+    def balance(self, prod:Sideways_Product, result:Dict[str, List[Order]]):
+        orders: List[Order] = []
+        if (prod.curr_pos != 0):
+
+            ##TODO: buy/sell at the farthest price from trade-around for balancing 
+            
+            if (prod.curr_pos < 0):
+                orders.append(Order(prod.name, prod.best_buy, -prod.curr_pos))
+                prod.curr_buy_pos += prod.curr_pos
+            else:
+                orders.append(Order(prod.name, prod.best_sell, -prod.curr_pos))
+                prod.curr_sell_pos += prod.curr_pos
+        
+        if prod.name in result:
+            result[prod.name].extend(orders)
+        else:
+            result[prod.name] = orders
+ 
+            
+
+    def market_take(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
         orders: List[Order] = []
 
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         # This should be much more dynamic.
         # See Resin Class
        
-        if (prod.curr_pos != 0):
-            orders.append(Order(prod.name, prod.trade_around, -prod.curr_pos))
+        
         
         #market taking code
         if (prod.best_sell < prod.trade_around):
-            orders.append(Order(prod.name, prod.best_sell, prod.mt_bv))
+            orders.append(Order(prod.name, prod.best_buy, prod.mt_bv))
+            prod.curr_buy_pos += prod.mt_bv
         if (prod.best_buy > prod.trade_around):
-            orders.append(Order(prod.name, prod.best_buy, prod.mt_sv))
+            orders.append(Order(prod.name, prod.best_sell, prod.mt_sv))
+            prod.curr_sell_pos += prod.mt_sv
         
-        result[prod.name] = orders
-        return result
+        if prod.name in result:
+            result[prod.name].extend(orders)
+        else:
+            result[prod.name] = orders
+ 
     
-    def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
+    def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
         orders: List[Order] = []
-    
-       
-        
         
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         #This should be much more dynamic. 
-     
-        
-        if (prod.curr_pos != 0):
-            orders.append(Order(prod.name, prod.trade_around, -prod.curr_pos))
+        #See Resin 
         
         #market making code
         
-        if (prod.gap >= 2):
-            orders.append(Order(prod.name,prod.best_buy + 1, prod.mm_bv))
+        if (prod.gap >= 2 and prod.curr_pos < 30 and prod.curr_pos > -30):
+            orders.append(Order(prod.name, prod.best_buy + 1, prod.mm_bv))
             orders.append(Order(prod.name, prod.best_sell - 1 , prod.mm_sv))
         
-        
-        result[prod.name] = orders
 
-        return result
+        if prod.name in result:
+            result[prod.name].extend(orders)
+        else:
+            result[prod.name] = orders
     
     def run(self, state: TradingState):
 
         rr = Resin(state)
+        kl = Kelp(state)
         result: Dict[str, List[Order]] = {}
+        
+        self.balance(kl, result)
+        self.market_make(kl, result)
+        #self.market_take(rr, result)
 
-		
-        result = self.market_take(rr, result)
-
-        print ("results are")
-        print(result)
+        self.balance(rr, result)
+        #self.market_make(rr, result)
+        self.market_take(rr, result)
         
         traderData = "SAMPLE"  
         conversions = 1
