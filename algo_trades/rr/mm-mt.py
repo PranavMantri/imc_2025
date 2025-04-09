@@ -127,80 +127,94 @@ EVERYTHING ABOVE HERE NEEDED FOR BT VISUALIZER
 '''
 
 #GLOBALS
-rr_trade_around = 10000
-resin_max_pos = 50
+class Sideways_Product:
+    name = ''
+    od = Dict[Symbol, OrderDepth]
+    trade_around = 0
+    max_pos = 0
+    best_sell = 0
+    best_buy = 0
+    gap = 0
+    curr_pos = 0
+    curr_sell_pos = 0
+    curr_buy_pos = 0
+    mm_bv = 0
+    mm_sv = 0
+    mt_bv = 0
+    mt_sv = 0
 
+class Resin():
+    def __init__(self, state:TradingState):
+        self.name = 'RAINFOREST_RESIN'
+        self.od = state.order_depths['RAINFOREST_RESIN']
+        self.trade_around = 10000
+        self.max_pos = 50
+        self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 10000
+        self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 10000
+        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
+        self.curr_pos = state.position.get('RAINFOREST_RESIN', 0)
+        self.curr_sell_pos = 0
+        self.curr_buy_pos = 0
+        
+        #OPTIMIZABLE VARS
+        self.mm_bv = 20
+        self.mm_sv = -20
+        self.mt_bv = 20
+        self.mt_sv = -20
 
 
 class Trader:
-    
-    def market_take(self, state:TradingState, product:str, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
+
+    def market_take(self, prod:Sideways_Product, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
         orders: List[Order] = []
-        od = state.order_depths
-        
-        curr_pos = state.position.get(product, 0)
-        buy_len = len(od[product].buy_orders)
-        sell_len = len(od[product].sell_orders)
-        
-        bb = max(od[product].buy_orders) if buy_len else 0
-        bs = min(od[product].sell_orders) if sell_len else 0
-                
-        
+
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
-        #This should be much more dynamic. 
-        mbv = 20
-        msv = -20
-        
-        if (curr_pos != 0):
-            orders.append(Order(product, rr_trade_around, -curr_pos))
+        # This should be much more dynamic.
+        # See Resin Class
+       
+        if (prod.curr_pos != 0):
+            orders.append(Order(prod.name, prod.trade_around, -prod.curr_pos))
         
         #market taking code
-        if (bs < rr_trade_around):
-            orders.append(Order(product, bs, mbv))
-        if (bb > rr_trade_around):
-            orders.append(Order(product, bb, msv))
+        if (prod.best_sell < prod.trade_around):
+            orders.append(Order(prod.name, prod.best_sell, prod.mt_bv))
+        if (prod.best_buy > prod.trade_around):
+            orders.append(Order(prod.name, prod.best_buy, prod.mt_sv))
         
-        result[product] = orders
-
+        result[prod.name] = orders
         return result
-    def market_make(self, state:TradingState, product:str, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
+    
+    def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
         orders: List[Order] = []
-        od = state.order_depths
-        
-        curr_pos = state.position.get(product, 0)
-        buy_len = len(od[product].buy_orders)
-        sell_len = len(od[product].sell_orders)
-        
-        bb = max(od[product].buy_orders) if buy_len else 0
-        bs = min(od[product].sell_orders) if sell_len else 0
-        gap = bs - bb if bb and bs else -1
+    
+       
         
         
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         #This should be much more dynamic. 
-        mbv = 25
-        msv = -25
+     
         
-        if (curr_pos != 0):
-            orders.append(Order(product, rr_trade_around, -curr_pos))
+        if (prod.curr_pos != 0):
+            orders.append(Order(prod.name, prod.trade_around, -prod.curr_pos))
         
         #market making code
         
-        if (gap >= 2):
-            orders.append(Order(product, bb + 1, mbv))
-            orders.append(Order(product, bs -1 , msv))
+        if (prod.gap >= 2):
+            orders.append(Order(prod.name,prod.best_buy + 1, prod.mm_bv))
+            orders.append(Order(prod.name, prod.best_sell - 1 , prod.mm_sv))
         
         
-        result[product] = orders
+        result[prod.name] = orders
 
         return result
     
     def run(self, state: TradingState):
 
+        rr = Resin(state)
         result: Dict[str, List[Order]] = {}
 
 		
-        result = self.market_take(state, 'RAINFOREST_RESIN', result)
+        result = self.market_take(rr, result)
 
         print ("results are")
         print(result)
@@ -210,4 +224,3 @@ class Trader:
         logger.flush(state, result, conversions, traderData)
         
         return result, conversions, traderData
-    
