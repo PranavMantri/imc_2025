@@ -131,7 +131,7 @@ class Sideways_Product:
     name = ''
     od = Dict[Symbol, OrderDepth]
     trade_around = 0
-    max_pos = 0
+    pos_lim = 0
     best_sell = 0
     best_buy = 0
     gap = 0
@@ -148,7 +148,7 @@ class Resin(Sideways_Product):
         self.name = 'RAINFOREST_RESIN'
         self.od = state.order_depths['RAINFOREST_RESIN']
         self.trade_around = 10000
-        self.max_pos = 50
+        self.pos_lim = 50
         self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 10000
         self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 10000
         self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
@@ -167,7 +167,7 @@ class Kelp(Sideways_Product):
         self.name = 'KELP'
         self.od = state.order_depths['KELP']
         self.trade_around = 10000
-        self.max_pos = 50
+        self.pos_lim = 50
         self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 10000
         self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 10000
         self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
@@ -189,14 +189,15 @@ class Trader:
         if (prod.curr_pos != 0):
 
             ##TODO: buy/sell at the farthest price from trade-around for balancing 
-            
+       
             if (prod.curr_pos < 0):
                 orders.append(Order(prod.name, prod.best_buy, -prod.curr_pos))
                 prod.curr_buy_pos += prod.curr_pos
             else:
                 orders.append(Order(prod.name, prod.best_sell, -prod.curr_pos))
                 prod.curr_sell_pos += prod.curr_pos
-        
+
+
         if prod.name in result:
             result[prod.name].extend(orders)
         else:
@@ -215,10 +216,10 @@ class Trader:
         
         #market taking code
         if (prod.best_sell < prod.trade_around):
-            orders.append(Order(prod.name, prod.best_buy, prod.mt_bv))
+            orders.append(Order(prod.name, prod.best_sell, prod.mt_bv))
             prod.curr_buy_pos += prod.mt_bv
         if (prod.best_buy > prod.trade_around):
-            orders.append(Order(prod.name, prod.best_sell, prod.mt_sv))
+            orders.append(Order(prod.name, prod.best_buy, prod.mt_sv))
             prod.curr_sell_pos += prod.mt_sv
         
         if prod.name in result:
@@ -236,7 +237,7 @@ class Trader:
         
         #market making code
         
-        if (prod.gap >= 2 and prod.curr_pos < 30 and prod.curr_pos > -30):
+        if (prod.gap >= 2 and prod.curr_pos < (prod.pos_lim - prod.mm_bv - prod.curr_buy_pos) and prod.curr_pos > -(prod.pos_lim + prod.mm_sv + prod.curr_sell_pos)):
             orders.append(Order(prod.name, prod.best_buy + 1, prod.mm_bv))
             orders.append(Order(prod.name, prod.best_sell - 1 , prod.mm_sv))
         
@@ -254,10 +255,9 @@ class Trader:
         
         self.balance(kl, result)
         self.market_make(kl, result)
-        #self.market_take(rr, result)
 
         self.balance(rr, result)
-        #self.market_make(rr, result)
+        self.market_make(rr, result)
         self.market_take(rr, result)
         
         traderData = "SAMPLE"  
