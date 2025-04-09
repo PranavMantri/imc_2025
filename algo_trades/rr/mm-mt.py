@@ -143,7 +143,7 @@ class Sideways_Product:
     mt_bv = 0
     mt_sv = 0
 
-class Resin():
+class Resin(Sideways_Product):
     def __init__(self, state:TradingState):
         self.name = 'RAINFOREST_RESIN'
         self.od = state.order_depths['RAINFOREST_RESIN']
