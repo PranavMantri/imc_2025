@@ -272,17 +272,6 @@ class Trader:
     def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
         orders: List[Order] = []
         
-<<<<<<< HEAD
-        if (
-                prod.gap >= 3 and 
-                prod.curr_pos < (prod.pos_lim - prod.mm_bv - prod.curr_buy_pos) and 
-                prod.curr_pos > -(prod.pos_lim + prod.mm_sv + prod.curr_sell_pos)
-            ):
-            
-            #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
-            orders.append(Order(prod.name, prod.best_buy + 1, prod.mm_bv))
-            orders.append(Order(prod.name, prod.best_sell - 1 , prod.mm_sv))
-=======
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         #This should be much more dynamic. 
         #See Resin 
@@ -306,7 +295,6 @@ class Trader:
                 break
 
 
->>>>>>> origin/rr_optimized
         
 
         if prod.name in result:
@@ -340,14 +328,9 @@ class Trader:
         #kl = Kelp(state)
         result: Dict[str, List[Order]] = {}
         
-<<<<<<< HEAD
-        self.balance(kl, result)
-        # self.market_bully(kl, result)
-        self.market_make(kl, result)
-=======
         #self.balance(kl, result)
+        # self.market_bully(kl, result)
         #self.market_make(kl, result)
->>>>>>> origin/rr_optimized
 
         self.balance(rr, result)
         self.market_make(rr, result)
