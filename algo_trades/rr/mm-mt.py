@@ -191,8 +191,8 @@ class Resin(Sideways_Product):
         self.curr_buy_pos = 0
         
         #OPTIMIZABLE VARS
-        self.mm_bv = 5
-        self.mm_sv = -5
+        self.mm_bv = 20
+        self.mm_sv = -20
         self.mt_bv = 20
         self.mt_sv = -20
 
@@ -272,6 +272,7 @@ class Trader:
     def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
         orders: List[Order] = []
         
+<<<<<<< HEAD
         if (
                 prod.gap >= 3 and 
                 prod.curr_pos < (prod.pos_lim - prod.mm_bv - prod.curr_buy_pos) and 
@@ -281,6 +282,31 @@ class Trader:
             #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
             orders.append(Order(prod.name, prod.best_buy + 1, prod.mm_bv))
             orders.append(Order(prod.name, prod.best_sell - 1 , prod.mm_sv))
+=======
+        #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
+        #This should be much more dynamic. 
+        #See Resin 
+
+        b_bank = prod.pos_lim - prod.curr_buy_pos
+        s_bank = prod.pos_lim - prod.curr_sell_pos
+        for backoff in range(1,10):
+
+            '''
+            bv_ = max(int(0.8 * b_bank), 20)
+            sv_ = min(int(0.8 * s_bank), -20)
+            '''
+
+
+
+            bv_ = int(prod.mm_bv/backoff)
+            sv_ = int(prod.mm_sv/backoff)
+            if (prod.gap >= 3 and prod.curr_pos < (prod.pos_lim - bv_- prod.curr_buy_pos) and prod.curr_pos > -(prod.pos_lim + sv_ + prod.curr_sell_pos)):
+                orders.append(Order(prod.name, prod.best_buy + 1, bv_))
+                orders.append(Order(prod.name, prod.best_sell - 1 , sv_))
+                break
+
+
+>>>>>>> origin/rr_optimized
         
 
         if prod.name in result:
@@ -311,12 +337,17 @@ class Trader:
     def run(self, state: TradingState):
 
         rr = Resin(state)
-        kl = Kelp(state)
+        #kl = Kelp(state)
         result: Dict[str, List[Order]] = {}
         
+<<<<<<< HEAD
         self.balance(kl, result)
         # self.market_bully(kl, result)
         self.market_make(kl, result)
+=======
+        #self.balance(kl, result)
+        #self.market_make(kl, result)
+>>>>>>> origin/rr_optimized
 
         self.balance(rr, result)
         self.market_make(rr, result)
