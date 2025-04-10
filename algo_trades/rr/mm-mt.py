@@ -1,6 +1,7 @@
 import json
 from typing import Any
 import math
+import numpy as np
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState, Dict, List
 
 '''
@@ -193,8 +194,8 @@ class Resin(Sideways_Product):
         #OPTIMIZABLE VARS
         self.mm_bv = 20
         self.mm_sv = -20
-        self.mt_bv = 20
-        self.mt_sv = -20
+        self.mt_bv = 15
+        self.mt_sv = -15
 
 class Kelp(Sideways_Product):
     def __init__(self, state:TradingState):
@@ -252,16 +253,39 @@ class Trader:
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         # This should be much more dynamic.
         # See Resin Class
-       
+        b_bank = prod.pos_lim - prod.curr_buy_pos
+        s_bank = prod.pos_lim + prod.curr_sell_pos
+
+        sv_ = prod.mt_sv
+        bv_ = prod.mt_bv
+
+        i = 0
+        for key, val in prod.od.buy_orders.items():
+            i += 1
+            if(i > 3):
+                break
+            if (key > prod.trade_around):
+                orders.append(Order(prod.name, key, prod.mt_sv))
+                prod.curr_sell_pos += -val
+
+
+        j = 0
+        for key, val in prod.od.sell_orders.items():
+            j += 1
+            if(j > 3):
+                break
+            if (key < prod.trade_around):
+                orders.append(Order(prod.name, key, prod.mt_bv))
+                prod.curr_buy_pos += -val
         
         
         #market taking code
-        if (prod.best_sell < prod.trade_around):
-            orders.append(Order(prod.name, prod.best_sell, prod.mt_bv))
-            prod.curr_buy_pos += prod.mt_bv
-        if (prod.best_buy > prod.trade_around):
-            orders.append(Order(prod.name, prod.best_buy, prod.mt_sv))
-            prod.curr_sell_pos += prod.mt_sv
+        # if (prod.best_sell < prod.trade_around):
+        #     orders.append(Order(prod.name, prod.best_sell, prod.mt_bv))
+        #     prod.curr_buy_pos += prod.mt_bv
+        # if (prod.best_buy > prod.trade_around):
+        #     orders.append(Order(prod.name, prod.best_buy, prod.mt_sv))
+        #     prod.curr_sell_pos += prod.mt_sv
         
         if prod.name in result:
             result[prod.name].extend(orders)
@@ -277,23 +301,39 @@ class Trader:
         #See Resin 
 
         b_bank = prod.pos_lim - prod.curr_buy_pos
-        s_bank = prod.pos_lim - prod.curr_sell_pos
-        for backoff in range(1,10):
+        s_bank = prod.pos_lim + prod.curr_sell_pos
 
+        #this conditional assumes we market take the position we are missing out on here
+        #if (prod.best_buy < prod.trade_around and prod.best_sell > prod.trade_around):
+        for backoff in range(1,10):
             '''
             bv_ = max(int(0.8 * b_bank), 20)
             sv_ = min(int(0.8 * s_bank), -20)
             '''
 
-
-
-            bv_ = int(prod.mm_bv/backoff)
-            sv_ = int(prod.mm_sv/backoff)
+            bv_ = int(prod.mm_bv/(backoff ))
+            sv_ = int(prod.mm_sv/(backoff ))
             if (prod.gap >= 3 and prod.curr_pos < (prod.pos_lim - bv_- prod.curr_buy_pos) and prod.curr_pos > -(prod.pos_lim + sv_ + prod.curr_sell_pos)):
                 orders.append(Order(prod.name, prod.best_buy + 1, bv_))
                 orders.append(Order(prod.name, prod.best_sell - 1 , sv_))
                 break
 
+
+        # for i in range(1,10):
+        #
+        #     '''
+        #     bv_ = max(int(0.8 * b_bank), 20)
+        #     sv_ = min(int(0.8 * s_bank), -20)
+        #     '''
+        #     backoff_b = b_bank/prod.gap
+        #     backoff_s = s_bank/prod.gap
+        #
+        #     bv_ = int(prod.mm_bv - i*backoff_b)
+        #     sv_ = int(prod.mm_sv + i*backoff_s)
+        #     if (prod.gap >= 3 and prod.curr_pos < (prod.pos_lim - bv_- prod.curr_buy_pos) and prod.curr_pos > -(prod.pos_lim + sv_ + prod.curr_sell_pos)):
+        #         orders.append(Order(prod.name, prod.best_buy + 1, bv_))
+        #         orders.append(Order(prod.name, prod.best_sell - 1 , sv_))
+        #         break
 
         
 
@@ -332,9 +372,9 @@ class Trader:
         # self.market_bully(kl, result)
         self.market_make(kl, result)
 
-        # self.balance(rr, result)
-        # self.market_make(rr, result)
-        # self.market_take(rr, result)
+        self.balance(rr, result)
+        self.market_make(rr, result)
+        self.market_take(rr, result)
         
         traderData = "SAMPLE"  
         conversions = 1
