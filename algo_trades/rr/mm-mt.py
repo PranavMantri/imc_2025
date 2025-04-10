@@ -325,16 +325,16 @@ class Trader:
     def run(self, state: TradingState):
 
         rr = Resin(state)
-        #kl = Kelp(state)
+        kl = Kelp(state)
         result: Dict[str, List[Order]] = {}
         
-        #self.balance(kl, result)
+        self.balance(kl, result)
         # self.market_bully(kl, result)
-        #self.market_make(kl, result)
+        self.market_make(kl, result)
 
-        self.balance(rr, result)
-        self.market_make(rr, result)
-        self.market_take(rr, result)
+        # self.balance(rr, result)
+        # self.market_make(rr, result)
+        # self.market_take(rr, result)
         
         traderData = "SAMPLE"  
         conversions = 1
