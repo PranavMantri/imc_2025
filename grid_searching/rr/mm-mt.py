@@ -144,10 +144,10 @@ class Sideways_Product:
     mt_sv = 0
 
 class Resin(Sideways_Product):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, trade_around):
         self.name = 'RAINFOREST_RESIN'
         self.od = state.order_depths['RAINFOREST_RESIN']
-        self.trade_around = 10000
+        self.trade_around = trade_around
         self.max_pos = 50
         self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 10000
         self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 10000
@@ -164,6 +164,9 @@ class Resin(Sideways_Product):
 
 
 class Trader:
+    
+    def __init__(self, params:Dict = {}):
+        self.params = params
 
     def market_take(self, prod:Sideways_Product, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
         orders: List[Order] = []
@@ -183,34 +186,10 @@ class Trader:
         
         result[prod.name] = orders
         return result
-    
-    def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]) -> Dict[str, List[Order]]:
-        orders: List[Order] = []
-    
-       
-        
-        
-        #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
-        #This should be much more dynamic. 
-     
-        
-        if (prod.curr_pos != 0):
-            orders.append(Order(prod.name, prod.trade_around, -prod.curr_pos))
-        
-        #market making code
-        
-        if (prod.gap >= 2):
-            orders.append(Order(prod.name,prod.best_buy + 1, prod.mm_bv))
-            orders.append(Order(prod.name, prod.best_sell - 1 , prod.mm_sv))
-        
-        
-        result[prod.name] = orders
 
-        return result
-    
     def run(self, state: TradingState):
 
-        rr = Resin(state)
+        rr = Resin(state, 10000)
         result: Dict[str, List[Order]] = {}
 
 		
