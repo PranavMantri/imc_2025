@@ -315,12 +315,12 @@ class Trader:
         result: Dict[str, List[Order]] = {}
         
         self.balance(kl, result)
-        self.market_bully(kl, result)
+        # self.market_bully(kl, result)
         self.market_make(kl, result)
 
-        # self.balance(rr, result)
-        # self.market_make(rr, result)
-        # self.market_take(rr, result)
+        self.balance(rr, result)
+        self.market_make(rr, result)
+        self.market_take(rr, result)
         
         traderData = "SAMPLE"  
         conversions = 1
