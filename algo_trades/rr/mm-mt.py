@@ -3,7 +3,7 @@ from typing import Any
 import math
 import numpy as np
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState, Dict, List
-
+import time
 '''
 EVERYTHING BELOW HERE NEEDED FOR BT VISUALIZER
 '''
@@ -128,355 +128,253 @@ EVERYTHING ABOVE HERE NEEDED FOR BT VISUALIZER
 '''
 
 #GLOBALS
-class Sideways_Product:
+class ProductTrader:
 
-    name = ''
-    od = Dict[Symbol, OrderDepth]
-    trade_around = 0
-    pos_lim = 0
-    best_sell = 0
-    best_buy = 0
-    gap = 0
-    curr_pos = 0
-    curr_sell_pos = 0
-    curr_buy_pos = 0
-    mm_bv = 0
-    mm_sv = 0
-    mt_bv = 0
-    mt_sv = 0
-    midprice = 0
-    bigWindow =100
-    smallWindow = bigWindow // 2
-    ma_bv = 20
-    ma_sv = -20
+    def __init__(self, name):
+        
+        self.name = name
+        self.od = Dict[Symbol, OrderDepth]
+        self.curr_pos = 0
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+        
+        # Market Making
+        self.pos_lim = 0
+        self.best_sell = 0
+        self.best_buy = 0
+        self.mm_bv = 0
+        self.mm_sv = 0
+        
+        # Market Taking
+        self.trade_around = 0
+        self.mt_bv = 0
+        self.mt_sv = 0
+        
+        # Moving Avg
+        self.midprice = 0
+        self.big_window_size =100
+        self.ma_bv = 20
+        self.ma_sv = -20
 
-    #big mean - small mean
-    prev_diff = 0
-
+        #big mean - small mean
+        self.prev_diff = 0
     
-    def wvap_orders(self) -> None:
-
-        
-        buy_avg = 0
-        buy_vol = 0
-        sell_avg = 0
-        sell_vol = 0
-        
-        if (len(self.od.buy_orders)):
-        
-            for key, value in self.od.buy_orders.items():
-                buy_avg += key * value
-                buy_vol += value
-            
-            self.best_buy = int(math.ceil(buy_avg / buy_vol))            
-        
-        else:
-            
-            self.best_buy = 0
-
-        if (len(self.od.sell_orders)):
-            for key, value in self.od.sell_orders.items():
-                sell_avg += key * value
-                sell_vol += value
-            
-            self.best_sell = int(math.floor(sell_avg / sell_vol))
-        
-        else:
-            
-            self.best_sell = 0
-        
-        logger.print(f"best-buy: {self.best_buy}, best-sell: {self.best_sell}")
-        self.midprice = (self.best_buy + self.best_sell)//2 if self.best_buy and self.best_sell else -1
-
-        return
-    def update_td(self, state: TradingState):
-        if state.traderData != '':
-            decoded = json.loads(state.traderData)
-            self.prev_prices = decoded.get('prev_prices', [])
-            if len(self.prev_prices) > self.bigWindow:
-                self.prev_prices.pop(0)
-
-            self.prev_diff = decoded.get('prev_diff', 0)
-
-        self.prev_prices.append(self.midprice)
-
-
-    def get_window(self):
-        return self.prev_prices, self.prev_prices[-self.smallWindow:]
-    
-    
-class Resin(Sideways_Product):
-    def __init__(self, state:TradingState):
-        self.name = 'RAINFOREST_RESIN'
-        self.od = state.order_depths['RAINFOREST_RESIN']
-        self.trade_around = 10000
-        self.pos_lim = 50
-        self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 10000
-        self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 10000
-        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
-        self.curr_pos = state.position.get('RAINFOREST_RESIN', 0)
-        self.curr_sell_pos = 0
-        self.curr_buy_pos = 0
-        
-        #OPTIMIZABLE VARS
-        self.mm_bv = 20
-        self.mm_sv = -20
-        self.mt_bv = 15
-        self.mt_sv = -15
-
-class Kelp(Sideways_Product):
-    def __init__(self, state:TradingState):
-        self.name = 'KELP'
-        self.od = state.order_depths['KELP']
-        self.trade_around = 10000
-        self.pos_lim = 50
-        
-        # Using "wvap" to find ideal best buy/sell
-        self.wvap_orders()
-        
-        
-        # min max for best buy/sell
-        # self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 0
-        # self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 0    
-        
-        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
-        self.curr_pos = state.position.get('KELP', 0)
-        self.curr_sell_pos = 0
-        self.curr_buy_pos = 0
-        
-        #OPTIMIZABLE VARS
-        self.mm_bv = 20
-        self.mm_sv = -20
-        self.mt_bv = 20
-        self.mt_sv = -20
-
-class SquidInk(Sideways_Product):
-
-
-    def __init__(self, state: TradingState):
-        self.name = 'SQUID_INK'
-        self.od = state.order_depths['SQUID_INK']
-        self.trade_around = 2000
-        self.pos_lim = 50
-
-        # Using "wvap" to find ideal best buy/sell
-        self.wvap_orders()
-
-        # min max for best buy/sell
-        # self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else 0
-        # self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else 0
-
-        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
-        self.curr_pos = state.position.get('SQUID_INK', 0)
-        self.curr_sell_pos = 0
-        self.curr_buy_pos = 0
-
-        # OPTIMIZABLE VARS
-        self.mm_bv = 10
-        self.mm_sv = -10
-        self.mt_bv = 20
-        self.mt_sv = -20
-        self.ma_bv = 40
-        self.ma_sv = -40
-        self.bigWindow = 100
-
-
-
-
-        self.prev_prices = []
-        self.update_td(state)
-
-
-
-
-    def get_vwap(self) -> float:
-        total_value = 0
-        total_volume = 0
-
-        # Combine both sides for a more comprehensive VWAP
-        for price, volume in self.od.buy_orders.items():
-            total_value += price * abs(volume)
-            total_volume += abs(volume)
-
-        for price, volume in self.od.sell_orders.items():
-            total_value += price * abs(volume)
-            total_volume += abs(volume)
-
-        return total_value / total_volume if total_volume > 0 else (self.best_buy + self.best_sell) / 2
-
-
-class Trader:
-
-    def balance(self, prod:Sideways_Product, result:Dict[str, List[Order]]):
-        orders: List[Order] = []
-        if (prod.curr_pos != 0):
-
-            ##TODO: buy/sell at the farthest price from trade-around for balancing 
-
-            if (prod.curr_pos < 0):
-                orders.append(Order(prod.name, prod.best_buy + 1, -prod.curr_pos))
-                prod.curr_buy_pos += prod.curr_pos
-            else:
-                orders.append(Order(prod.name, prod.best_sell - 1, -prod.curr_pos))
-                prod.curr_sell_pos += prod.curr_pos
-
-
-        if prod.name in result:
-            result[prod.name].extend(orders)
-        else:
-            result[prod.name] = orders
-
-
-
-    def market_take(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
+    def market_take(self, result:Dict[str,List[Order]]):
         orders: List[Order] = []
 
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
-        # This should be much more dynamic.
-        # See Resin Class
-        b_bank = prod.pos_lim - prod.curr_buy_pos
-        s_bank = prod.pos_lim + prod.curr_sell_pos
-
-        sv_ = prod.mt_sv
-        bv_ = prod.mt_bv
-
         i = 0
-        for key, val in prod.od.buy_orders.items():
+        for key, val in self.od.buy_orders.items():
             i += 1
             if(i > 3):
                 break
-            if (key > prod.trade_around):
-                orders.append(Order(prod.name, key, prod.mt_sv))
-                prod.curr_sell_pos += -val
+            if (key > self.trade_around):
+                orders.append(Order(self.name, key, self.mt_sv))
+                self.curr_sell_vol += -val
 
 
         j = 0
-        for key, val in prod.od.sell_orders.items():
+        for key, val in self.od.sell_orders.items():
             j += 1
             if(j > 3):
                 break
-            if (key < prod.trade_around):
-                orders.append(Order(prod.name, key, prod.mt_bv))
-                prod.curr_buy_pos += -val
+            if (key < self.trade_around):
+                orders.append(Order(self.name, key, self.mt_bv))
+                self.curr_buy_vol += -val
 
-
-        #market taking code
-        # if (prod.best_sell < prod.trade_around):
-        #     orders.append(Order(prod.name, prod.best_sell, prod.mt_bv))
-        #     prod.curr_buy_pos += prod.mt_bv
-        # if (prod.best_buy > prod.trade_around):
-        #     orders.append(Order(prod.name, prod.best_buy, prod.mt_sv))
-        #     prod.curr_sell_pos += prod.mt_sv
-
-        if prod.name in result:
-            result[prod.name].extend(orders)
+        if self.name in result:
+            result[self.name].extend(orders)
         else:
-            result[prod.name] = orders
-
-
-    def market_make(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
+            result[self.name] = orders
+            
+    def market_make(self, result:Dict[str,List[Order]]):
         orders: List[Order] = []
 
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
-        #This should be much more dynamic. 
-        #See Resin 
-
-        b_bank = prod.pos_lim - prod.curr_buy_pos
-        s_bank = prod.pos_lim + prod.curr_sell_pos
 
         #this conditional assumes we market take the position we are missing out on here
         #if (prod.best_buy < prod.trade_around and prod.best_sell > prod.trade_around):
+        
         for backoff in range(1,20):
             '''
             bv_ = max(int(0.8 * b_bank), 20)
             sv_ = min(int(0.8 * s_bank), -20)
             '''
 
-            bv_ = int(prod.mm_bv/(backoff ))
-            sv_ = int(prod.mm_sv/(backoff ))
-            if (prod.gap >= 3 and prod.curr_pos < (prod.pos_lim - bv_- prod.curr_buy_pos) and prod.curr_pos > -(prod.pos_lim + sv_ + prod.curr_sell_pos)):
-                orders.append(Order(prod.name, prod.best_buy + 1, bv_))
-                orders.append(Order(prod.name, prod.best_sell - 1 , sv_))
+            bv_ = int(self.mm_bv/(backoff ))
+            sv_ = int(self.mm_sv/(backoff ))
+            if (
+                self.gap >= 3 and 
+                self.curr_pos < (self.pos_lim - bv_- self.curr_buy_vol) and 
+                self.curr_pos > -(self.pos_lim + sv_ + self.curr_sell_vol)):
+                orders.append(Order(self.name, self.best_buy + 1, bv_))
+                orders.append(Order(self.name, self.best_sell - 1 , sv_))
                 break
 
-
+        # TODO: Decide to delete pls
         # for i in range(1,10):
-        #
+        
         #     '''
         #     bv_ = max(int(0.8 * b_bank), 20)
         #     sv_ = min(int(0.8 * s_bank), -20)
         #     '''
-        #     backoff_b = b_bank/prod.gap
-        #     backoff_s = s_bank/prod.gap
-        #
-        #     bv_ = int(prod.mm_bv - i*backoff_b)
-        #     sv_ = int(prod.mm_sv + i*backoff_s)
-        #     if (prod.gap >= 3 and prod.curr_pos < (prod.pos_lim - bv_- prod.curr_buy_pos) and prod.curr_pos > -(prod.pos_lim + sv_ + prod.curr_sell_pos)):
-        #         orders.append(Order(prod.name, prod.best_buy + 1, bv_))
-        #         orders.append(Order(prod.name, prod.best_sell - 1 , sv_))
+        #     backoff_b = b_bank/self.gap
+        #     backoff_s = s_bank/self.gap
+        
+        #     bv_ = int(self.mm_bv - i*backoff_b)
+        #     sv_ = int(self.mm_sv + i*backoff_s)
+        #     if (self.gap >= 3 and self.curr_pos < (self.pos_lim - bv_- self.curr_buy_vol) and self.curr_pos > -(self.pos_lim + sv_ + self.curr_sell_vol)):
+        #         orders.append(Order(self.name, self.best_buy + 1, bv_))
+        #         orders.append(Order(self.name, self.best_sell - 1 , sv_))
         #         break
-
-
-
-        if prod.name in result:
-            result[prod.name].extend(orders)
+        if self.name in result:
+            result[self.name].extend(orders)
         else:
-            result[prod.name] = orders
+            result[self.name] = orders
+            
+    def balance(self, result:Dict[str, List[Order]]):
+        orders: List[Order] = []
+        if (self.curr_pos != 0):
 
-    def market_bully(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
+            ##TODO: buy/sell at the farthest price from trade-around for balancing 
+
+            if (self.curr_pos < 0):
+                orders.append(Order(self.name, self.best_buy + 1, -self.curr_pos))
+                self.curr_buy_vol += self.curr_pos
+            else:
+                orders.append(Order(self.name, self.best_sell - 1, -self.curr_pos))
+                self.curr_sell_vol += self.curr_pos
+
+
+        if self.name in result:
+            result[self.name].extend(orders)
+        else:
+            result[self.name] = orders
+
+    def calc_vwaps(self) -> tuple[int, int, int]:
+        """
+        Returns the (best_buy, midprice, best_sell) using volume weighted average products
+        
+        does vwap on buy orders --> best buy
+        does vwap on sell orders --> best sell
+        avg buy/sell -> mid
+        """    
+        buy_sum = 0
+        buy_vol = 0
+        sell_sum = 0
+        sell_vol = 0
+        
+        if (len(self.od.buy_orders)):
+            for key, value in self.od.buy_orders.items():
+                buy_sum += key * value
+                buy_vol += value
+            best_buy = int(math.ceil(buy_sum / buy_vol))            
+        else:
+            best_buy = 0
+
+        if (len(self.od.sell_orders)):
+            for key, value in self.od.sell_orders.items():
+                sell_sum += key * value
+                sell_vol += value
+            best_sell = int(math.floor(sell_sum / sell_vol))
+        else:
+            best_sell = 0
+                
+        # TODO: Revaluate this
+        midprice = (best_buy + best_sell)//2 if best_buy and best_sell else -1
+
+        return (best_buy, midprice, best_sell)
+    
+    def update_td(self, trader_data):
+        """
+        Implement this in child and ONLY update trader_data[self.name]
+        """
+        pass
+
+
+    
+    
+class ResinTrader(ProductTrader):
+    def __init__(self, state:TradingState):
+        # super().__init__('RAINFOREST_RESIN')
+        self.name = 'RAINFOREST_RESIN'
+        # HARD SET VARS
+        self.trade_around = 10000
+        self.pos_lim = 50
+        
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+        self.od = state.order_depths[self.name]
+                
+        #OPTIMIZABLE VARS
+        # Market Make
+        self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else self.trade_around
+        self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else self.trade_around
+        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
+        self.mm_bv = 20
+        self.mm_sv = -20
+        
+        self.mt_bv = 15
+        self.mt_sv = -15
+
+class Kelp(ProductTrader):
+    def __init__(self, state:TradingState):
+        super().__init__('KELP')
+        self.od = state.order_depths[self.name]
+        self.trade_around = 10000
+        self.pos_lim = 50
+        
+        # Using "wvap" to find ideal best buy/sell
+        (self.best_buy, _, self.best_sell) = self.calc_vwaps()  
+        
+        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+        
+        #OPTIMIZABLE VARS
+        self.mm_bv = 20
+        self.mm_sv = -20
+        self.mt_bv = 20
+        self.mt_sv = -20
+
+class SquidInk(ProductTrader):
+
+    def __init__(self, state: TradingState, traderData: Dict):
+        super().__init__('SQUID_INK')
+        self.od = state.order_depths[self.name]
+        
+        # HARDCODED VARS
+        # TODO: Do we need this
+        # self.trade_around = 2000
+        self.pos_lim = 50
+
+        # Using "wvap" to find ideal best buy/sell
+        (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+        self.update_td(traderData, self.midprice)
+        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+
+
+        # OPTIMIZABLE VARS
+        # Market Making
+        self.mm_bv = 10
+        self.mm_sv = -10
+        
+        self.mt_bv = 20
+        self.mt_sv = -20
+        
+        self.ma_bv = 40
+        self.ma_sv = -40
+        self.big_window_size = 100
+        
+    def clearing_avg(self, result: Dict[str, List[Order]], traderData):
         orders: List[Order] = []
 
-        for key, value in prod.od.buy_orders.items():
-            if key > prod.best_buy:
-                logger.print(f"We are bullying the buy at {key}")
-                orders.append(Order(prod.name, key, -value))
-                # orders.append(Order(prod.name, prod.best_buy, value))
-
-        for key, value in prod.od.sell_orders.items():
-            if key < prod.best_sell:
-                logger.print(f"We are bullying the sell at {key}")
-                orders.append(Order(prod.name, key, -value))
-                # orders.append(Order(prod.name, prod.best_sell, value))
-
-        if prod.name in result:
-            result[prod.name].extend(orders)
-        else:
-            result[prod.name] = orders
-
-    def moving_avg(self, prod:Sideways_Product, result:Dict[str,List[Order]]):
-        orders: List[Order] = []
-
-        bw,sw = prod.get_window()
-
-        # logger.print(*bw)
-        # logger.print(*sw)
-
-        bw_mean = np.mean(bw)
-        sw_mean = np.mean(sw)
-
-        curr_diff = bw_mean - sw_mean
-
-        #big surpassed small - downward trend prob
-        if(prod.prev_diff < 0 and curr_diff > 0):
-            logger.print("big passed small")
-            orders.append(Order(prod.name, prod.best_sell, prod.ma_bv))
-        #small surpassed big - current upward trend
-        if(prod.prev_diff > 0 and curr_diff < 0):
-            logger.print("small passed big")
-            orders.append(Order(prod.name, prod.best_buy, prod.ma_sv))
-
-        prod.prev_diff = curr_diff
-        if prod.name in result:
-            result[prod.name].extend(orders)
-        else:
-            result[prod.name] = orders
-        return
-
-
-    def clearing_avg(self, prod: Sideways_Product, result: Dict[str, List[Order]]):
-        orders: List[Order] = []
-
-        bw, sw = prod.get_window()
+        bw, sw = self.get_windows()
         if not bw or not sw:
             return
 
@@ -487,57 +385,80 @@ class Trader:
         bw_std = np.std(bw)
         dynamic_threshold = max(20, min(bw_std * 1.5,40))
 
-        if len(prod.prev_prices) < prod.bigWindow:
-            logger.print(f"Insufficient data: {len(prod.prev_prices)}/{prod.bigWindow}")
+        if len(self.prev_prices) < self.big_window_size:
+            logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.big_window_size}")
             return
 
-        if prod.midprice < bw_mean - dynamic_threshold:
-            order_volume = min(prod.ma_bv, int(prod.pos_lim * 0.5))  # Limit to 10% of max position
-            orders.append(Order(prod.name, prod.best_sell, order_volume))
-            logger.print(f"Buy signal at {prod.midprice} (mean: {bw_mean:.2f}, threshold: {dynamic_threshold:.2f})")
-        elif prod.midprice > bw_mean + dynamic_threshold:
-            order_volume = min(prod.ma_sv, int(prod.pos_lim * 0.5   ))
-            orders.append(Order(prod.name, prod.best_buy, -order_volume))  # Negative for sell
-            logger.print(f"Sell signal at {prod.midprice} (mean: {bw_mean:.2f}, threshold: {dynamic_threshold:.2f})")
+        if self.midprice < bw_mean - dynamic_threshold:
+            order_volume = min(self.ma_bv, int(self.pos_lim * 0.5))  # Limit to 10% of max position
+            orders.append(Order(self.name, self.best_sell, order_volume))
+            logger.print(f"Buy signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {dynamic_threshold:.2f})")
+        elif self.midprice > bw_mean + dynamic_threshold:
+            order_volume = min(self.ma_sv, int(self.pos_lim * 0.5   ))
+            orders.append(Order(self.name, self.best_buy, -order_volume))  # Negative for sell
+            logger.print(f"Sell signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {dynamic_threshold:.2f})")
 
-
-
-        prod.prev_diff = curr_diff
+        self.prev_diff = curr_diff
 
         if orders:
-            if prod.name in result:
-                result[prod.name].extend(orders)
+            if self.name in result:
+                result[self.name].extend(orders)
             else:
-                result[prod.name] = orders
+                result[self.name] = orders
+
+    def update_td(self, traderData, new_mid_price):
+        """
+        For Squid Ink we maintain a sliding window
+        
+        """
+        self.prev_prices = traderData[self.name].get('prev_prices', [])
+        
+        if (len(self.prev_prices) == self.big_window_size):
+            self.prev_prices.pop(0)
+            
+        self.prev_prices.append(new_mid_price)
+        
+        traderData[self.name]['prev_prices'] = self.prev_prices
+        
+        return
+    
+
+    def get_windows(self):
+        return self.prev_prices, self.prev_prices[-(self.big_window_size//2):]
 
 
-
-
-
+class Trader:
 
     def run(self, state: TradingState):
 
-        rr = Resin(state)
+        if state.traderData == '' or state.traderData == None:
+            traderData = {
+                "RAINFOREST_RESIN" : {},
+                "SQUID_INK" : {},
+                "KELP" : {}
+            }
+        else:
+            traderData = json.loads(state.traderData)
+        
+        rr = ResinTrader(state)
         kl = Kelp(state)
-        si = SquidInk(state)
+        si = SquidInk(state, traderData)
 
         result: Dict[str, List[Order]] = {}
 
-        self.balance(kl, result)
-        #self.market_bully(kl, result)
-        self.market_make(kl, result)
-        #
-        self.balance(rr, result)
-        self.market_make(rr, result)
-        self.market_take(rr, result)
+        kl.balance(result)
+        # # self.market_bully(kl, result)
+        kl.market_make(result)
 
-        self.balance(si, result)
-        self.clearing_avg(si,result)
-        self.market_make(si, result)
+        rr.balance(result)
+        rr.market_make(result)
+        rr.market_take(result)
 
+        si.balance(result)
+        si.clearing_avg(result, traderData)
+        si.market_make(result)
 
-        traderData = json.dumps({"prev_prices":si.prev_prices,
-                                "prev_diff":si.prev_diff})
+        traderData = json.dumps(traderData)
         conversions = 1
         logger.flush(state, result, conversions, traderData)
 
