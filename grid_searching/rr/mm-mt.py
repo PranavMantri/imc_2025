@@ -189,13 +189,13 @@ class Trader:
 
     def run(self, state: TradingState):
 
-        rr = Resin(state, 10000)
+        rr = Resin(state, self.params['trade_around'])
         result: Dict[str, List[Order]] = {}
 
 		
         result = self.market_take(rr, result)
 
-        logger.print ("results: ", result)
+        logger.print ("params: ", self.params)
         
         traderData = "SAMPLE"  
         conversions = 1
