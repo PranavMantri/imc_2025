@@ -142,8 +142,7 @@ class ProductTrader:
         self.pos_lim = 0
         self.best_sell = 0
         self.best_buy = 0
-        self.mm_bv = 0
-        self.mm_sv = 0
+        self.backoff = 0
         
         # Market Taking
         self.trade_around = 0
@@ -195,38 +194,18 @@ class ProductTrader:
         #this conditional assumes we market take the position we are missing out on here
         #if (prod.best_buy < prod.trade_around and prod.best_sell > prod.trade_around):
         
-        for backoff in range(1,20):
-            '''
-            bv_ = max(int(0.8 * b_bank), 20)
-            sv_ = min(int(0.8 * s_bank), -20)
-            '''
+        bv_ = int((self.pos_lim - self.curr_buy_vol) * self.backoff)
+        sv_ = int( -(self.pos_lim + self.curr_sell_vol) * self.backoff)
 
-            bv_ = int(self.mm_bv/(backoff ))
-            sv_ = int(self.mm_sv/(backoff ))
-            if (
-                self.gap >= 3 and 
-                self.curr_pos < (self.pos_lim - bv_- self.curr_buy_vol) and 
-                self.curr_pos > -(self.pos_lim + sv_ + self.curr_sell_vol)):
-                orders.append(Order(self.name, self.best_buy + 1, bv_))
-                orders.append(Order(self.name, self.best_sell - 1 , sv_))
-                break
+        if (
+            self.gap >= self.gap_trigger and 
+            self.curr_pos < (self.pos_lim - self.curr_buy_vol) * self.backoff and 
+            self.curr_pos > -(self.pos_lim + self.curr_sell_vol) * self.backoff
+            ):
+            orders.append(Order(self.name, self.best_buy + 1, bv_))
+            orders.append(Order(self.name, self.best_sell - 1 , sv_))
 
-        # TODO: Decide to delete pls
-        # for i in range(1,10):
-        
-        #     '''
-        #     bv_ = max(int(0.8 * b_bank), 20)
-        #     sv_ = min(int(0.8 * s_bank), -20)
-        #     '''
-        #     backoff_b = b_bank/self.gap
-        #     backoff_s = s_bank/self.gap
-        
-        #     bv_ = int(self.mm_bv - i*backoff_b)
-        #     sv_ = int(self.mm_sv + i*backoff_s)
-        #     if (self.gap >= 3 and self.curr_pos < (self.pos_lim - bv_- self.curr_buy_vol) and self.curr_pos > -(self.pos_lim + sv_ + self.curr_sell_vol)):
-        #         orders.append(Order(self.name, self.best_buy + 1, bv_))
-        #         orders.append(Order(self.name, self.best_sell - 1 , sv_))
-        #         break
+
         if self.name in result:
             result[self.name].extend(orders)
         else:
@@ -237,12 +216,12 @@ class ProductTrader:
         if (self.curr_pos != 0):
 
             ##TODO: buy/sell at the farthest price from trade-around for balancing 
-
+            best_delta = min(self.gap//2 -1, self.best_delta)
             if (self.curr_pos < 0):
-                orders.append(Order(self.name, self.best_buy + 1, -self.curr_pos))
+                orders.append(Order(self.name, self.best_buy + best_delta, -self.curr_pos))
                 self.curr_buy_vol += self.curr_pos
             else:
-                orders.append(Order(self.name, self.best_sell - 1, -self.curr_pos))
+                orders.append(Order(self.name, self.best_sell - best_delta, -self.curr_pos))
                 self.curr_sell_vol += self.curr_pos
 
 
@@ -307,16 +286,17 @@ class ResinTrader(ProductTrader):
         self.curr_buy_vol = 0
         self.od = state.order_depths[self.name]
                 
-        #OPTIMIZABLE VARS
         # Market Make
         self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else self.trade_around
         self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else self.trade_around
         self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
-        self.mm_bv = 20
-        self.mm_sv = -20
         
+        #OPTIMIZABLE VARS
+        self.backoff = 0.5
         self.mt_bv = 15
-        self.mt_sv = -15
+        self.mt_sv = -25
+        self.gap_trigger = 4
+        self.best_delta = 1
 
 class Kelp(ProductTrader):
     def __init__(self, state:TradingState):
@@ -371,7 +351,7 @@ class SquidInk(ProductTrader):
         self.ma_sv = -40
         self.big_window_size = 100
         
-    def clearing_avg(self, result: Dict[str, List[Order]], traderData):
+    def moving_avg(self, result: Dict[str, List[Order]], traderData):
         orders: List[Order] = []
 
         bw, sw = self.get_windows()
@@ -383,7 +363,8 @@ class SquidInk(ProductTrader):
         curr_diff = bw_mean - sw_mean
 
         bw_std = np.std(bw)
-        dynamic_threshold = max(20, min(bw_std * 1.5,40))
+        # dynamic_threshold = max(20, min(bw_std * 1.5,40))
+        dynamic_threshold = bw_std * self.z_score
 
         if len(self.prev_prices) < self.big_window_size:
             logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.big_window_size}")
@@ -446,17 +427,16 @@ class Trader:
 
         result: Dict[str, List[Order]] = {}
 
-        kl.balance(result)
-        # # self.market_bully(kl, result)
-        kl.market_make(result)
+        # kl.balance(result)
+        # kl.market_make(result)
 
         rr.balance(result)
         rr.market_make(result)
         rr.market_take(result)
 
-        si.balance(result)
-        si.clearing_avg(result, traderData)
-        si.market_make(result)
+        # si.balance(result)
+        # si.clearing_avg(result, traderData)
+        # si.market_make(result)
 
         traderData = json.dumps(traderData)
         conversions = 1
