@@ -159,7 +159,10 @@ class ProductTrader:
         #big mean - small mean
         self.prev_diff = 0
     
-    def market_take(self, result:Dict[str,List[Order]]):
+    def market_take(self, result:Dict[str,List[Order]],move_fair_price = False,fair_price = 0):
+        if(not move_fair_price):
+            fair_price = self.trade_around
+
         orders: List[Order] = []
 
         #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
@@ -168,7 +171,7 @@ class ProductTrader:
             i += 1
             if(i > 3):
                 break
-            if (key > self.trade_around):
+            if (key > fair_price):
                 orders.append(Order(self.name, key, self.mt_sv))
                 self.curr_sell_vol += -val
 
@@ -178,7 +181,7 @@ class ProductTrader:
             j += 1
             if(j > 3):
                 break
-            if (key < self.trade_around):
+            if (key < fair_price):
                 orders.append(Order(self.name, key, self.mt_bv))
                 self.curr_buy_vol += -val
 
@@ -186,6 +189,7 @@ class ProductTrader:
             result[self.name].extend(orders)
         else:
             result[self.name] = orders
+
             
     def market_make(self, result:Dict[str,List[Order]]):
         orders: List[Order] = []
@@ -319,15 +323,16 @@ class ResinTrader(ProductTrader):
         self.mt_sv = -15
 
 class Kelp(ProductTrader):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, traderData: Dict):
         super().__init__('KELP')
         self.od = state.order_depths[self.name]
         self.trade_around = 10000
         self.pos_lim = 50
+        self.big_window_size = 20
         
         # Using "wvap" to find ideal best buy/sell
-        (self.best_buy, _, self.best_sell) = self.calc_vwaps()  
-        
+        (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+        self.update_td(traderData, self.midprice)
         self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
         self.curr_pos = state.position.get(self.name, 0)
         self.curr_sell_vol = 0
@@ -338,6 +343,56 @@ class Kelp(ProductTrader):
         self.mm_sv = -20
         self.mt_bv = 20
         self.mt_sv = -20
+
+        self.ma_bv = 40
+        self.ma_sv = -40
+
+
+    def moving_take(self, result: Dict[str, List[Order]], traderData):
+        orders: List[Order] = []
+
+        bw, sw = self.get_windows()
+        if not bw or not sw:
+            return
+
+        bw_mean = np.mean(bw)
+        sw_mean = np.mean(sw)
+        curr_diff = bw_mean - sw_mean
+
+        bw_std = np.std(bw)
+        dynamic_threshold = max(20, min(bw_std * 1.5, 40))
+
+        if len(self.prev_prices) < self.big_window_size:
+            logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.big_window_size}")
+            return
+
+        self.market_take(result, True, bw_mean)
+
+        self.prev_diff = curr_diff
+
+        if orders:
+            if self.name in result:
+                result[self.name].extend(orders)
+            else:
+                result[self.name] = orders
+    def get_windows(self):
+        return self.prev_prices, self.prev_prices[-(self.big_window_size//2):]
+
+    def update_td(self, traderData, new_mid_price):
+        """
+        For Squid Ink we maintain a sliding window
+
+        """
+        self.prev_prices = traderData[self.name].get('prev_prices', [])
+
+        if (len(self.prev_prices) == self.big_window_size):
+            self.prev_prices.pop(0)
+
+        self.prev_prices.append(new_mid_price)
+
+        traderData[self.name]['prev_prices'] = self.prev_prices
+
+        return
 
 class SquidInk(ProductTrader):
 
@@ -441,15 +496,20 @@ class Trader:
             traderData = json.loads(state.traderData)
         
         rr = ResinTrader(state)
-        kl = Kelp(state)
+        kl = Kelp(state, traderData)
         si = SquidInk(state, traderData)
 
         result: Dict[str, List[Order]] = {}
 
         kl.balance(result)
         # # self.market_bully(kl, result)
+
+        kl.moving_take(result, traderData)
         kl.market_make(result)
 
+        #kl.market_make(result)
+
+        '''
         rr.balance(result)
         rr.market_make(result)
         rr.market_take(result)
@@ -457,6 +517,7 @@ class Trader:
         si.balance(result)
         si.clearing_avg(result, traderData)
         si.market_make(result)
+        '''
 
         traderData = json.dumps(traderData)
         conversions = 1
