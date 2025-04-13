@@ -458,7 +458,7 @@ class Picnic_Basket1(ProductTrader):
         self.mt_bv = 1
         self.mt_sv = -1
 
-
+'''
 class Picnic_Basket2(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict):
         super().__init__('PICNIC_BASKET2')
@@ -478,6 +478,8 @@ class Picnic_Basket2(ProductTrader):
         self.mm_sv = -1
         self.mt_bv = 1
         self.mt_sv = -1
+'''
+
 
 class Croissant(ProductTrader):
     def __init__(self, state:TradingState, traderData: Dict):
@@ -499,6 +501,7 @@ class Croissant(ProductTrader):
         self.mt_bv = 1
         self.mt_sv = -1
 
+
 class Jam(ProductTrader):
     def __init__(self, state:TradingState, traderData: Dict):
         super().__init__('JAMS')
@@ -518,6 +521,7 @@ class Jam(ProductTrader):
         self.mm_sv = -1
         self.mt_bv = 1
         self.mt_sv = -1
+
 
 class Djembe(ProductTrader):
     def __init__(self, state:TradingState, traderData: Dict):
@@ -641,181 +645,102 @@ class pb1_trader(ProductTrader):
         #self.djem.long(self.djem.best_buy, 1, result)
 
 
-class pb12diff_trader(ProductTrader):
+class PB2ResidualTrader(ProductTrader):
+    def __init__(self, state: TradingState, traderData: Dict):
+        super().__init__('PICNIC_BASKET2')
+        self.state = state
+        self.traderData = traderData
 
-    def __init__(self, state: TradingState, traderData: Dict, pb1: Picnic_Basket1, pb2: Picnic_Basket2, crst: Croissant, jams: Jam, djem: Djembe):
+        self.components = {"CROISSANTS": 4, "JAMS": 2}
+        self.flat_cost = 0
+        self.max_pos = 100
 
-        self.od = None
-        # normal vars
-        self.pb1 = pb1
-        self.pb2 = pb2
-        self.crst = crst
-        self.jams = jams
-        self.djem = djem
-        self.abs_slope_thresh = 2
-        self.breakout = 120
+        self.trade_at = 17
+        self.max_trade_size = 1
 
-        #f_day_minus1["BASKET_DIFF"] = (df_day_minus1["PICNIC_BASKET1" ] - df_day_minus1["DJEMBES"] - 2*df_day_minus1["CROISSANTS"]- df_day_minus1["JAMS"] -  df_day_minus1["PICNIC_BASKET2"])
+        self.od = state.order_depths.get(self.name, OrderDepth())
+        self.curr_pos = state.position.get(self.name, 0)
+        self.orders = []
 
-        #our synthetic thing
-        self.diff = pb1.midprice - djem.midprice - 2*crst.midprice - jams.midprice - pb2.midprice
+    def get_mid_price(self, symbol: str) -> float:
+        od = self.state.order_depths.get(symbol, None)
+        if od and od.buy_orders and od.sell_orders:
+            best_bid = max(od.buy_orders.keys())
+            best_ask = min(od.sell_orders.keys())
+            return (best_bid + best_ask) / 2
+        return None
 
-        # parametrizers!
-        self.big_window_size = 1000
-        self.premium = 0
-        #yikes!
-        self.name = "PICNIC_BASKET2"
-        self.prev_prices = self.get_prev_prices(traderData)
-        self.curr_slope, self.curr_intercept = np.polyfit(np.arange(len(self.prev_prices)), np.array(self.prev_prices), 1) if (len(self.prev_prices)> 2) else (0,0)
-        
-        
-        #probably unreasonable!
-        
-        
+    def compute_residual(self) -> float:
+        basket_mid = self.get_mid_price(self.name)
+        if basket_mid is None:
+            return 0.0
 
+        synthetic_value = 0.0
+        for comp, qty in self.components.items():
+            price = self.get_mid_price(comp)
+            if price is None:
+                return 0.0
+            synthetic_value += qty * price
 
-    def get_prev_prices(self, traderDict: Dict) -> List[int]:
+        return basket_mid - (synthetic_value + self.flat_cost)
 
-        my_data  = traderDict.get(self.name)
-        prev_prices = my_data.get('prev_prices', [])
+    def trade_residual(self, result: Dict[str, List[Order]]):
+        residual = self.compute_residual()
 
+        if residual > self.trade_at and self.curr_pos > -self.max_pos:
+            best_bid = max(self.od.buy_orders.keys()) if self.od.buy_orders else None
+            if best_bid:
+                size = min(self.max_trade_size, self.max_pos + self.curr_pos)
+                result[self.name] = [Order(self.name, best_bid, -size)]
 
-        #maintain the window
-        if (len(prev_prices) > self.big_window_size):
-            prev_prices.pop(0)
-    
-
-        prev_prices.append(self.diff)
-        self.prev_prices = prev_prices
-
-        my_data['prev_prices'] = prev_prices
-        traderDict[self.name] = my_data
-        return prev_prices
-
-
-    #we are trading based on "self.diff" reverting to 0
-    #linreg AND outside dotted lines from 0 -> make a decision
-    def trade_the_diff(self, result:Dict[Symbol, List[Order]]):
-        orders: List[Order] = []
-
-        if (len(self.prev_prices) < self.big_window_size):
-            return
-        if (self.diff in range(-self.breakout, self.breakout)):
-            self.pb2.balance(result)
-            return
-
-
-        if (abs(self.curr_slope) >= self.abs_slope_thresh):
-            self.pb2.balance(result)
-            return
-        
-        #if here, outside breakout and slope is flat ish ! 
-
-
-        # PB1 subtracted_synth is underval -> buy (buy pb1, sell the things we subtracted)
-        # PB2 is overval -> sell
-
-        if (self.diff > 0):
-            orders.append(Order(self.pb2.name, self.pb2.best_sell, 10))
-        
-        
-        # PB1 subtracted_synth is overval -> sell (sell pb1, buy the things we subtracted)
-        # PB2 is underval -> buy
-        else:
-            orders.append(Order(self.pb2.name, self.pb2.best_sell, -10))
-    
-        if self.pb2.name in result:
-            result[self.pb2.name].extend(orders)
-        else:
-            result[self.pb2.name] = orders
-
-    # TODO!!!!!!
-    def check_lims(self) -> int:
-        synth_pos = self.crst.curr_pos + self.jams.curr_pos + self.djem.curr_pos
-        synth_lim = 6 * self.crst.pos_lim + 4 * self.jams.pos_lim + self.djem.pos_lim
-
-        if (self.pb1.curr_pos > self.pb1.pos_lim or synth_pos < -synth_lim):
-            return 1
-
-        if (synth_pos > synth_lim or self.pb1.curr_pos < -self.pb1.pos_lim):
-            return -1
-
-        return 0
-
-    def short_synthetics(self, result):
-        # self.crst.short(self.crst.best_sell, 6, result)
-
-        # TODO: FIX THIS TO MIRROR ACTUAL
-        self.jams.short(self.jams.best_sell, 30, result)
-        # self.djem.short(self.djem.best_sell, 1, result)
-
-    def long_synthetics(self, result):
-        # self.crst.long(self.crst.best_buy, 6, result)
-
-        # TODO: FIX THIS TO MIRROR ACTUAL
-        self.jams.long(self.jams.best_buy, 30, result)
-        # self.djem.long(self.djem.best_buy, 1, result)
-
-    
-
-
-        
-
-
-
+        elif residual < -self.trade_at and self.curr_pos < self.max_pos:
+            best_ask = min(self.od.sell_orders.keys()) if self.od.sell_orders else None
+            if best_ask:
+                size = min(self.max_trade_size, self.max_pos - self.curr_pos)
+                result[self.name] = [Order(self.name, best_ask, size)]
 
 
 
 
 class Trader:
 
-
     def run(self, state: TradingState):
-
-        if state.traderData == '' or state.traderData == None:
+        if state.traderData == '' or state.traderData is None:
             traderData = {
-                "RAINFOREST_RESIN" : {},
-                "SQUID_INK" : {},
-                "KELP" : {},
-                "PICNIC_BASKET1" : {},
-                "PICNIC_BASKET2" : {},
-                "CROISSANTS" : {},
-                "JAMS" : {},
-                "DJEMBES" : {},
+                "RAINFOREST_RESIN": {},
+                "SQUID_INK": {},
+                "KELP": {},
+                "PICNIC_BASKET1": {},
+                "PICNIC_BASKET2": {},
+                "CROISSANTS": {},
+                "JAMS": {},
+                "DJEMBES": {},
             }
         else:
             traderData = json.loads(state.traderData)
-        
+
+        # Instantiate product trader classes
         rr = ResinTrader(state)
         kl = Kelp(state)
         si = SquidInk(state, traderData)
-        
         pb1 = Picnic_Basket1(state, traderData)
-        pb2 = Picnic_Basket2(state, traderData)
+        pb2 = PB2ResidualTrader(state, traderData)
         crst = Croissant(state, traderData)
         jams = Jam(state, traderData)
         djem = Djembe(state, traderData)
 
         result: Dict[str, List[Order]] = {}
 
+        # === Run trading strategies ===
         pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
-        pb2_t = pb12diff_trader(state, traderData, pb1, pb2, crst, jams, djem)
-
-        #pb1_t.trade_the_diff(result)
-        pb2_t.trade_the_diff(result)
-        #crst.balance(result)
-        #pb1.market_make(result)
-
-
-
+        pb2_t = pb2.trade_residual(result)  # your custom PB2 residual logic
+        pb1_t.trade_the_diff(result)
+        # Finalize and return
         traderData = json.dumps(traderData)
         conversions = 1
         logger.flush(state, result, conversions, traderData)
 
         return result, conversions, traderData
-
-
-
 
 # Parametrize:
 
