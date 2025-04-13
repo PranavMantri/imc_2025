@@ -33,9 +33,6 @@ class Agent:
 
 
 def print_game_state(containers, total_players):
-    print(f"\n{'Container':>9} | {'x':>4} | {'Inh':>4} | {'Players':>7} | {'Prob':>8} | {'Expected Payoff':>17}")
-    print("-" * 75)
-
     best_idx = None
     best_value = -float('inf')
     expected_values = {}
@@ -48,40 +45,9 @@ def print_game_state(containers, total_players):
             best_value = payoff
             best_idx = idx
 
-        print(f"{idx:>9} | {c.multiplier:>4} | {c.inhabitants:>4} | {c.players:>7} | {c.probability:>8.5f} | {payoff:>17,.2f}")
-
-    print("\n💰 Most profitable container: ", best_idx, f"(Expected Payoff: {expected_values[best_idx]:,.2f})")
-
-
-'''
-def update_probabilities(containers, beta=0.01, max_diff=100):
-    payoffs = np.array([c.avg_payoff for c in containers.values()])
-
-    # Handle degenerate case where all payoffs are 0
-    if np.all(payoffs == 0):
-        print("DEGENERATION")
-        uniform_prob = 1.0 / len(containers)
-        for c in containers.values():
-            c.probability = uniform_prob
-        return
-
-    # Stabilize by clipping differences
-    min_payoff = np.min(payoffs)
-    clipped = np.clip(payoffs - min_payoff, 0, max_diff)
-
-    # Softmax with safety
-    exp_vals = np.exp(beta * clipped)
-    exp_vals[np.isnan(exp_vals)] = 0
-    total = np.sum(exp_vals)
-
-    if total == 0 or np.isnan(total):
-        softmax = np.ones_like(exp_vals) / len(exp_vals)
-    else:
-        softmax = exp_vals / total
-
-    for c, p in zip(containers.values(), softmax):
-        c.probability = max(p, 1e-8)  # never fully zero
-'''
+        f = open("game_state.txt", 'a')
+        f.write(f"{idx},{c.multiplier},{c.inhabitants},{c.players},{c.probability},{payoff}\n")
+        f.close()
 
 
 def update_probabilities(containers, beta=0.2):
@@ -189,18 +155,21 @@ def run_simulation(rounds, num_agents=9000, beta=0.1, explore_rate=0.4):
         if(r  > 0):
             print_game_state(containers, num_agents)
 
-            print(f"\n🏁 Round {r + 1}")
-            print("\n🔥 Top 5 Most Profitable Choices (after cost):")
+            f = open("game_choices.txt", 'a')
+            f.write(f"\nRound {r + 1}")
             for i, (choice, payoff) in enumerate(sorted_choices[:5]):
                 pretty_choice = tuple(int(x) for x in choice)
-                print(f"{i + 1:>2}. Choice: {pretty_choice} -> Avg Payoff: {payoff:,.2f}")
+                f.write(f"{i + 1:>2},{pretty_choice},{payoff:,.2f}")
+            f.close()
         update_probabilities(containers, beta=beta)
+
 
     return containers
 
 
 def main():
-    containers = run_simulation(rounds=30)
+
+    containers = run_simulation(rounds=1000)
 
 
 if __name__ == "__main__":
