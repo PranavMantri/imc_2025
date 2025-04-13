@@ -484,10 +484,18 @@ class Jam(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict):
         super().__init__('JAMS')
         self.od = state.order_depths[self.name]
+
+        # HARDCODED VARS
+        # TODO: Do we need this
+        # self.trade_around = 2000
         self.pos_lim = 350
 
         # Using "wvap" to find ideal best buy/sell
         (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+
+        # Retreives window and sets "fair" to moving avg
+        #self.update_td(traderData, self.midprice)
+        #self.trade_around = self.moving_avg()
 
         self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
         self.curr_pos = state.position.get(self.name, 0)
@@ -495,10 +503,10 @@ class Jam(ProductTrader):
         self.curr_buy_vol = 0
 
         # OPTIMIZABLE VARS
-        self.mm_bv = 1
-        self.mm_sv = -1
-        self.mt_bv = 1
-        self.mt_sv = -1
+        # Market Making
+        self.mm_vol_r = 0.5
+        self.gap_trigger = 2
+        self.best_delta = 3
 
 
 class Djembe(ProductTrader):
@@ -708,6 +716,8 @@ class Trader:
 
         si.balance(result)
         si.market_make(result)
+
+        jams.market_make(result)
 
         pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
         pb2_t = pb2.trade_residual(result)  # your custom PB2 residual logic
