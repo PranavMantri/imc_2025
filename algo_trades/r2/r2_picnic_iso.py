@@ -458,6 +458,27 @@ class Picnic_Basket1(ProductTrader):
         self.mt_bv = 1
         self.mt_sv = -1
 
+
+class Picnic_Basket2(ProductTrader):
+    def __init__(self, state: TradingState):
+        super().__init__('PICNIC_BASKET2')
+        self.od = state.order_depths[self.name]
+        self.pos_lim = 60
+
+        # Using "wvap" to find ideal best buy/sell midprice
+        (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+
+        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+
+        # OPTIMIZABLE VARS
+        self.mm_bv = 1
+        self.mm_sv = -1
+        self.mt_bv = 1
+        self.mt_sv = -1
+
 class Croissant(ProductTrader):
     def __init__(self, state:TradingState):
         super().__init__('CROISSANTS')
@@ -618,6 +639,80 @@ class pb1_trader(ProductTrader):
         #TODO: FIX THIS TO MIRROR ACTUAL
         self.jams.long(self.jams.best_buy, 30, result)
         #self.djem.long(self.djem.best_buy, 1, result)
+
+
+class pb12diff_trader(ProductTrader):
+
+    def __init__(self, state: TradingState, pb1: Picnic_Basket1, pb2: Picnic_Basket2, crst: Croissant, jams: Jam, djem: Djembe):
+
+        # parametrizers!
+        self.premium = 0
+        self.name = "pb12diff_trader"
+        self.prev_prices = self.get_prev_prices()
+
+
+        #f_day_minus1["BASKET_DIFF"] = (df_day_minus1["PICNIC_BASKET1" ] - df_day_minus1["DJEMBES"] - 2*df_day_minus1["CROISSANTS"]- df_day_minus1["JAMS"] -  df_day_minus1["PICNIC_BASKET2"])
+
+        #our synthetic thing
+        self.diff = pb1.midprice - djem.midprice - 2*crst.midprice - jams.midprice - pb2.midprice
+        # normal vars
+        self.pb1 = pb1
+        self.crst = crst
+        self.jams = jams
+        self.djem = djem
+
+
+
+    def get_prev_prices(self, state: TradingState):
+
+
+
+
+
+        return
+
+
+    #we are trading based on "self.diff" reverting to 0
+    #linreg AND outside dotted lines from 0 -> make a decision
+    def trade_the_diff(self, result):
+        orders: List[Order] = []
+
+
+
+
+
+        if self.pb1.name in result:
+            result[self.pb1.name].extend(orders)
+        else:
+            result[self.pb1.name] = orders
+
+    # TODO!!!!!!
+    def check_lims(self) -> int:
+        synth_pos = self.crst.curr_pos + self.jams.curr_pos + self.djem.curr_pos
+        synth_lim = 6 * self.crst.pos_lim + 4 * self.jams.pos_lim + self.djem.pos_lim
+
+        if (self.pb1.curr_pos > self.pb1.pos_lim or synth_pos < -synth_lim):
+            return 1
+
+        if (synth_pos > synth_lim or self.pb1.curr_pos < -self.pb1.pos_lim):
+            return -1
+
+        return 0
+
+    def short_synthetics(self, result):
+        # self.crst.short(self.crst.best_sell, 6, result)
+
+        # TODO: FIX THIS TO MIRROR ACTUAL
+        self.jams.short(self.jams.best_sell, 30, result)
+        # self.djem.short(self.djem.best_sell, 1, result)
+
+    def long_synthetics(self, result):
+        # self.crst.long(self.crst.best_buy, 6, result)
+
+        # TODO: FIX THIS TO MIRROR ACTUAL
+        self.jams.long(self.jams.best_buy, 30, result)
+        # self.djem.long(self.djem.best_buy, 1, result)
+
     
 
 
