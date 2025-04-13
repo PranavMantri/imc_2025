@@ -1,17 +1,17 @@
 {
-    "ma_vol_r" : [
+    "mm_vol_r" : [
+        0.4,
         0.5,
-        0.45,
-        0.40
+        0.6
     ],
-    "fixed_threshold" : [
-        30
+    "gap_trigger" : [
+        2,
+        3,
+        4
     ],
-    "big_window_size" :[
-        75,
-        80,
-        90,
-        95,
-        100
+    "best_delta" :[
+        1,
+        2,
+        3
     ]
 }

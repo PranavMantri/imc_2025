@@ -304,10 +304,9 @@ class ResinTrader(ProductTrader):
         self.best_delta = 1
 
 class Kelp(ProductTrader):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, params):
         super().__init__('KELP')
         self.od = state.order_depths[self.name]
-        self.trade_around = 10000
         self.pos_lim = 50
         
         # Using "wvap" to find ideal best buy/sell
@@ -319,11 +318,10 @@ class Kelp(ProductTrader):
         self.curr_buy_vol = 0
         
         #OPTIMIZABLE VARS
-        self.mm_bv = 20
-        self.mm_sv = -20
-        self.mt_bv = 20
-        self.mt_sv = -20
-
+        # GRID SEARCHED
+        self.mm_vol_r = 0.5
+        self.gap_trigger = 2
+        self.best_delta = 1
 class SquidInk(ProductTrader):
 
     def __init__(self, state: TradingState, traderData: Dict, params):
@@ -337,8 +335,11 @@ class SquidInk(ProductTrader):
 
         # Using "wvap" to find ideal best buy/sell
         (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+
+        # Retreives window and sets "fair" to moving avg
         self.update_td(traderData, self.midprice)
-        #self.fair = self.update_td(traderData, self.midprice)
+        self.trade_around = self.moving_avg()
+        
         self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
         self.curr_pos = state.position.get(self.name, 0)
         self.curr_sell_vol = 0
@@ -348,48 +349,46 @@ class SquidInk(ProductTrader):
         # OPTIMIZABLE VARS
         # Market Making
         self.mm_vol_r = 0.5
-        self.gap_trigger = 4
-        self.best_delta = 1
+        self.gap_trigger = 2
+        self.best_delta = 3
 
         # Moving Avg
-        self.ma_vol_r = params['ma_vol_r']
-        self.fixed_threshold = params['fixed_threshold']
-        self.big_window_size = params['big_window_size']
+        # self.ma_vol_r = params['ma_vol_r']
+        # self.fixed_threshold = params['fixed_threshold']
+        # self.big_window_size = params['big_window_size']
         
-    def moving_avg(self, result: Dict[str, List[Order]], traderData):
-        orders: List[Order] = []
+    def moving_avg(self):
 
         bw, sw = self.get_windows()
         if not bw or not sw:
             return
 
-        bw_mean = np.mean(bw)
+        return np.mean(bw)
+    
+    def market_take(self, result: Dict[str, List[Order]]):
+        orders: List[Order] = []
 
-        # bw_std = np.std(bw)
-        # logger.print(f"z-score * std: {bw_std * 1.5}")
-        # dynamic_threshold = bw_std * self.z_score
-        
-        if (self.fixed_threshold != 20):
-            logger.print(f"dynamic_threshold: {self.fixed_threshold}")
 
         if len(self.prev_prices) < self.big_window_size:
             logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.big_window_size}")
             return
 
-        if self.midprice < bw_mean - self.fixed_threshold:
-            order_volume = int(self.pos_lim * self.ma_vol_r) # Limit to 10% of max position
-            orders.append(Order(self.name, self.best_sell, order_volume))
-            logger.print(f"Buy signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {self.fixed_threshold:.2f})")
-        elif self.midprice > bw_mean + self.fixed_threshold:
-            order_volume = int(self.pos_lim * self.ma_vol_r)
-            orders.append(Order(self.name, self.best_buy, -order_volume))  # Negative for sell
-            logger.print(f"Sell signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {self.fixed_threshold:.2f})")
+        super().market_take(result)
 
-        if orders:
-            if self.name in result:
-                result[self.name].extend(orders)
-            else:
-                result[self.name] = orders
+        # if self.midprice > self.fair - self.fixed_threshold:
+        #     order_volume = int(self.pos_lim * self.ma_vol_r) # Limit to 10% of max position
+        #     orders.append(Order(self.name, self.best_sell, order_volume))
+        #     logger.print(f"Buy signal at {self.midprice} (mean: {self.fair:.2f}, threshold: {self.fixed_threshold:.2f})")
+        # elif self.midprice > self.fair + self.fixed_threshold:
+        #     order_volume = int(self.pos_lim * self.ma_vol_r)
+        #     orders.append(Order(self.name, self.best_buy, -order_volume))  # Negative for sell
+        #     logger.print(f"Sell signal at {self.midprice} (mean: {self.fair:.2f}, threshold: {self.fixed_threshold:.2f})")
+
+        # if orders:
+        #     if self.name in result:
+        #         result[self.name].extend(orders)
+        #     else:
+        #         result[self.name] = orders
 
     def update_td(self, traderData, new_mid_price):
         """
@@ -429,20 +428,20 @@ class Trader():
             traderData = json.loads(state.traderData)
         
         # rr = ResinTrader(state, self.params)
-        # kl = Kelp(state)
-        si = SquidInk(state, traderData, self.params)
+        kl = Kelp(state, self.params)
+        # si = SquidInk(state, traderData, self.params)
 
         result: Dict[str, List[Order]] = {}
 
-        # kl.balance(result)
-        # kl.market_make(result)
+        kl.balance(result)
+        kl.market_make(result)
 
         # rr.balance(result)
         # rr.market_make(result)
         # rr.market_take(result)
 
-        si.balance(result)
-        si.moving_avg(result, traderData)
+        # si.balance(result)
+        # # si.market_take(result)
         # si.market_make(result)
 
         traderData = json.dumps(traderData)

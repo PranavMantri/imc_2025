@@ -305,7 +305,6 @@ class Kelp(ProductTrader):
     def __init__(self, state:TradingState):
         super().__init__('KELP')
         self.od = state.order_depths[self.name]
-        self.trade_around = 10000
         self.pos_lim = 50
         
         # Using "wvap" to find ideal best buy/sell
@@ -317,10 +316,10 @@ class Kelp(ProductTrader):
         self.curr_buy_vol = 0
         
         #OPTIMIZABLE VARS
-        self.mm_bv = 20
-        self.mm_sv = -20
-        self.mt_bv = 20
-        self.mt_sv = -20
+        # GRID SEARCHED
+        self.mm_vol_r = 0.5
+        self.gap_trigger = 2
+        self.best_delta = 1
 
 class SquidInk(ProductTrader):
 
@@ -430,8 +429,8 @@ class Trader:
 
         result: Dict[str, List[Order]] = {}
 
-        # kl.balance(result)
-        # kl.market_make(result)
+        kl.balance(result)
+        kl.market_make(result)
 
         rr.balance(result)
         rr.market_make(result)
