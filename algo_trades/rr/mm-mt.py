@@ -341,14 +341,13 @@ class SquidInk(ProductTrader):
 
         # OPTIMIZABLE VARS
         # Market Making
-        self.mm_bv = 10
-        self.mm_sv = -10
-        
-        self.mt_bv = 20
-        self.mt_sv = -20
-        
-        self.ma_bv = 40
-        self.ma_sv = -40
+        self.mm_vol_r = 0.5
+        self.gap_trigger = 4
+        self.best_delta = 1
+
+        # Moving Avg
+        self.ma_vol_r = 0.45
+        self.fixed_threshold = 30
         self.big_window_size = 100
         
     def moving_avg(self, result: Dict[str, List[Order]], traderData):
@@ -359,27 +358,26 @@ class SquidInk(ProductTrader):
             return
 
         bw_mean = np.mean(bw)
-        sw_mean = np.mean(sw)
-        curr_diff = bw_mean - sw_mean
 
-        bw_std = np.std(bw)
-        # dynamic_threshold = max(20, min(bw_std * 1.5,40))
-        dynamic_threshold = bw_std * self.z_score
+        # bw_std = np.std(bw)
+        # logger.print(f"z-score * std: {bw_std * 1.5}")
+        # dynamic_threshold = bw_std * self.z_score
+        
+        if (self.fixed_threshold != 20):
+            logger.print(f"dynamic_threshold: {self.fixed_threshold}")
 
         if len(self.prev_prices) < self.big_window_size:
             logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.big_window_size}")
             return
 
-        if self.midprice < bw_mean - dynamic_threshold:
-            order_volume = min(self.ma_bv, int(self.pos_lim * 0.5))  # Limit to 10% of max position
+        if self.midprice < bw_mean - self.fixed_threshold:
+            order_volume = int(self.pos_lim * self.ma_vol_r) # Limit to 10% of max position
             orders.append(Order(self.name, self.best_sell, order_volume))
-            logger.print(f"Buy signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {dynamic_threshold:.2f})")
-        elif self.midprice > bw_mean + dynamic_threshold:
-            order_volume = min(self.ma_sv, int(self.pos_lim * 0.5   ))
+            logger.print(f"Buy signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {self.fixed_threshold:.2f})")
+        elif self.midprice > bw_mean + self.fixed_threshold:
+            order_volume = int(self.pos_lim * self.ma_vol_r)
             orders.append(Order(self.name, self.best_buy, -order_volume))  # Negative for sell
-            logger.print(f"Sell signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {dynamic_threshold:.2f})")
-
-        self.prev_diff = curr_diff
+            logger.print(f"Sell signal at {self.midprice} (mean: {bw_mean:.2f}, threshold: {self.fixed_threshold:.2f})")
 
         if orders:
             if self.name in result:
@@ -434,9 +432,9 @@ class Trader:
         rr.market_make(result)
         rr.market_take(result)
 
-        # si.balance(result)
-        # si.clearing_avg(result, traderData)
-        # si.market_make(result)
+        si.balance(result)
+        si.moving_avg(result, traderData)
+        si.market_make(result)
 
         traderData = json.dumps(traderData)
         conversions = 1
