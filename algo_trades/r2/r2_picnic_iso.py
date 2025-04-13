@@ -439,7 +439,7 @@ class SquidInk(ProductTrader):
 
 
 class Picnic_Basket1(ProductTrader):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, traderData: Dict):
         super().__init__('PICNIC_BASKET1')
         self.od = state.order_depths[self.name]
         self.pos_lim = 60
@@ -460,7 +460,7 @@ class Picnic_Basket1(ProductTrader):
 
 
 class Picnic_Basket2(ProductTrader):
-    def __init__(self, state: TradingState):
+    def __init__(self, state: TradingState, traderData: Dict):
         super().__init__('PICNIC_BASKET2')
         self.od = state.order_depths[self.name]
         self.pos_lim = 60
@@ -480,7 +480,7 @@ class Picnic_Basket2(ProductTrader):
         self.mt_sv = -1
 
 class Croissant(ProductTrader):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, traderData: Dict):
         super().__init__('CROISSANTS')
         self.od = state.order_depths[self.name]
         self.pos_lim = 250
@@ -500,7 +500,7 @@ class Croissant(ProductTrader):
         self.mt_sv = -1
 
 class Jam(ProductTrader):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, traderData: Dict):
         super().__init__('JAMS')
         self.od = state.order_depths[self.name]
         self.pos_lim = 350
@@ -520,7 +520,7 @@ class Jam(ProductTrader):
         self.mt_sv = -1
 
 class Djembe(ProductTrader):
-    def __init__(self, state:TradingState):
+    def __init__(self, state:TradingState, traderData: Dict):
         super().__init__('DJEMBES')
         self.od = state.order_depths[self.name]
         self.pos_lim = 60
@@ -542,7 +542,7 @@ class Djembe(ProductTrader):
 
 class pb1_trader(ProductTrader):
 
-    def __init__(self, pb1:Picnic_Basket1, crst:Croissant, jams:Jam, djem:Djembe):
+    def __init__(self, traderData: Dict, pb1:Picnic_Basket1, crst:Croissant, jams:Jam, djem:Djembe):
         
         # parametrizers! 
         self.premium = 48.75
@@ -643,48 +643,91 @@ class pb1_trader(ProductTrader):
 
 class pb12diff_trader(ProductTrader):
 
-    def __init__(self, state: TradingState, pb1: Picnic_Basket1, pb2: Picnic_Basket2, crst: Croissant, jams: Jam, djem: Djembe):
+    def __init__(self, state: TradingState, traderData: Dict, pb1: Picnic_Basket1, pb2: Picnic_Basket2, crst: Croissant, jams: Jam, djem: Djembe):
 
-        # parametrizers!
-        self.premium = 0
-        self.name = "pb12diff_trader"
-        self.prev_prices = self.get_prev_prices()
-
+        self.od = None
+        # normal vars
+        self.pb1 = pb1
+        self.pb2 = pb2
+        self.crst = crst
+        self.jams = jams
+        self.djem = djem
+        self.abs_slope_thresh = 2
+        self.breakout = 120
 
         #f_day_minus1["BASKET_DIFF"] = (df_day_minus1["PICNIC_BASKET1" ] - df_day_minus1["DJEMBES"] - 2*df_day_minus1["CROISSANTS"]- df_day_minus1["JAMS"] -  df_day_minus1["PICNIC_BASKET2"])
 
         #our synthetic thing
         self.diff = pb1.midprice - djem.midprice - 2*crst.midprice - jams.midprice - pb2.midprice
-        # normal vars
-        self.pb1 = pb1
-        self.crst = crst
-        self.jams = jams
-        self.djem = djem
+
+        # parametrizers!
+        self.big_window_size = 1000
+        self.premium = 0
+        #yikes!
+        self.name = "PICNIC_BASKET2"
+        self.prev_prices = self.get_prev_prices(traderData)
+        self.curr_slope, self.curr_intercept = np.polyfit(np.arange(len(self.prev_prices)), np.array(self.prev_prices), 1) if (len(self.prev_prices)> 2) else (0,0)
+        
+        
+        #probably unreasonable!
+        
+        
 
 
+    def get_prev_prices(self, traderDict: Dict) -> List[int]:
 
-    def get_prev_prices(self, state: TradingState):
+        my_data  = traderDict.get(self.name)
+        prev_prices = my_data.get('prev_prices', [])
 
 
+        #maintain the window
+        if (len(prev_prices) > self.big_window_size):
+            prev_prices.pop(0)
+    
 
+        prev_prices.append(self.diff)
+        self.prev_prices = prev_prices
 
-
-        return
+        my_data['prev_prices'] = prev_prices
+        traderDict[self.name] = my_data
+        return prev_prices
 
 
     #we are trading based on "self.diff" reverting to 0
     #linreg AND outside dotted lines from 0 -> make a decision
-    def trade_the_diff(self, result):
+    def trade_the_diff(self, result:Dict[Symbol, List[Order]]):
         orders: List[Order] = []
 
+        if (len(self.prev_prices) < self.big_window_size):
+            return
+        if (self.diff in range(-self.breakout, self.breakout)):
+            self.pb2.balance(result)
+            return
 
 
+        if (abs(self.curr_slope) >= self.abs_slope_thresh):
+            self.pb2.balance(result)
+            return
+        
+        #if here, outside breakout and slope is flat ish ! 
 
 
-        if self.pb1.name in result:
-            result[self.pb1.name].extend(orders)
+        # PB1 subtracted_synth is underval -> buy (buy pb1, sell the things we subtracted)
+        # PB2 is overval -> sell
+
+        if (self.diff > 0):
+            orders.append(Order(self.pb2.name, self.pb2.best_sell, 10))
+        
+        
+        # PB1 subtracted_synth is overval -> sell (sell pb1, buy the things we subtracted)
+        # PB2 is underval -> buy
         else:
-            result[self.pb1.name] = orders
+            orders.append(Order(self.pb2.name, self.pb2.best_sell, -10))
+    
+        if self.pb2.name in result:
+            result[self.pb2.name].extend(orders)
+        else:
+            result[self.pb2.name] = orders
 
     # TODO!!!!!!
     def check_lims(self) -> int:
@@ -735,6 +778,7 @@ class Trader:
                 "SQUID_INK" : {},
                 "KELP" : {},
                 "PICNIC_BASKET1" : {},
+                "PICNIC_BASKET2" : {},
                 "CROISSANTS" : {},
                 "JAMS" : {},
                 "DJEMBES" : {},
@@ -746,16 +790,19 @@ class Trader:
         kl = Kelp(state)
         si = SquidInk(state, traderData)
         
-        pb1 = Picnic_Basket1(state)
-        crst = Croissant(state)
-        jams = Jam(state)
-        djem = Djembe(state)
+        pb1 = Picnic_Basket1(state, traderData)
+        pb2 = Picnic_Basket2(state, traderData)
+        crst = Croissant(state, traderData)
+        jams = Jam(state, traderData)
+        djem = Djembe(state, traderData)
 
         result: Dict[str, List[Order]] = {}
 
-        pb1_t = pb1_trader(pb1, crst, jams, djem)
+        pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
+        pb2_t = pb12diff_trader(state, traderData, pb1, pb2, crst, jams, djem)
 
-        pb1_t.trade_the_diff(result)
+        #pb1_t.trade_the_diff(result)
+        pb2_t.trade_the_diff(result)
         #crst.balance(result)
         #pb1.market_make(result)
 
