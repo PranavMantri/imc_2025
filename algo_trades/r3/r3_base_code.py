@@ -238,7 +238,7 @@ class ProductTrader:
             float: The smoothed value at the center of the window.
         """
         "Length of input must match window_size"
-        if len(y) != self.prev_price_window: 
+        if len(y) < self.prev_price_window: 
             return self.midprice
         
         assert window_size % 2 == 1, "Window size must be odd"
