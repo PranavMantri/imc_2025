@@ -169,7 +169,6 @@ class ProductTrader:
         self.best_sell = 0
         self.midprice = 0
         self.trade_around = PROD_TR_AR[self.name]
-        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
         self.gap_trigger = 3
 
 
@@ -192,6 +191,7 @@ class ProductTrader:
 
          #call calculations functions
         (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
         
         ######################################
         # Pull out whatever from trader_data #
@@ -768,7 +768,7 @@ class Trader:
 
         rr.balance(result)
         rr.market_make(result)
-        # rr.market_take(result)
+        rr.market_take(result)
 
         kl.balance(result)
         kl.market_make(result)
