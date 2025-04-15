@@ -219,9 +219,39 @@ class ProductTrader:
         # Pull out whatever from trader_data #
         ######################################
         self.get_prev_prices()
+        self.smooth_price = self.savgol_filter_manual(self.prev_prices)
+        
+        ########################
+        # SMOOOOOTTTH OPERATOR #
+        ########################
 
-        ########
+    def savgol_filter_manual(self, y: list, window_size: int = 101, poly_order: int = 2) -> float:
+        """
+        Applies Savitzky-Golay filtering to the input list of midprices.
+        
+        Parameters:
+            y (list): List of midprices, length must equal window_size.
+            window_size (int): Must be odd. The number of points to consider in the window.
+            poly_order (int): The order of the polynomial to fit (e.g., 2 = quadratic).
+        
+        Returns:
+            float: The smoothed value at the center of the window.
+        """
+        "Length of input must match window_size"
+        if len(y) != self.prev_price_window: 
+            return self.midprice
+        
+        assert window_size % 2 == 1, "Window size must be odd"
+        
+        half = window_size // 2
+        x = np.arange(-half, half + 1)  # e.g., [-50, ..., 0, ..., +50]
+        X = np.vander(x, poly_order + 1, increasing=True)  # Vandermonde matrix
+        X_pinv = np.linalg.pinv(X)  # Pseudo-inverse for least squares
 
+        coeffs = X_pinv @ np.array(y)
+        smoothed_val = coeffs[0]  # Value at center of polynomial (x=0)
+
+        return smoothed_val
 
     def calc_vwaps(self) -> tuple[int, int, int]:
         """
@@ -760,7 +790,7 @@ class Trader:
 
         result: Dict[str, List[Order]] = {}
 
-        param_window = 200
+        param_window = 101
         
         rr = ResinTrader(state, traderData, result, param_window)
         kl = Kelp(state, traderData, result, param_window)
