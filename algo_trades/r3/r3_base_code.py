@@ -225,7 +225,7 @@ class ProductTrader:
         # SMOOOOOTTTH OPERATOR #
         ########################
 
-    def savgol_filter_manual(self, y: list, window_size: int = 101, poly_order: int = 2) -> float:
+    def savgol_filter_manual(self, a: list, window_size: int = 101, poly_order: int = 2) -> float:
         """
         Applies Savitzky-Golay filtering to the input list of midprices.
         
@@ -238,9 +238,10 @@ class ProductTrader:
             float: The smoothed value at the center of the window.
         """
         "Length of input must match window_size"
-        if len(y) < self.prev_price_window: 
+        if len(a) < self.prev_price_window: 
             return self.midprice
         
+        y = a[-self.prev_price_window:]
         assert window_size % 2 == 1, "Window size must be odd"
         
         half = window_size // 2
