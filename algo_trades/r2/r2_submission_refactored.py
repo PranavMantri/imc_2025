@@ -201,7 +201,6 @@ class ProductTrader:
         self.best_sell = 0
         self.midprice = 0
         self.trade_around = PROD_TR_AR[self.name]
-        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
         self.gap_trigger = 3
 
 
@@ -224,6 +223,7 @@ class ProductTrader:
 
          #call calculations functions
         (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
         
         ######################################
         # Pull out whatever from trader_data #
@@ -244,7 +244,7 @@ class ProductTrader:
         sell_sum = 0
         sell_vol = 0
         
-        if (len(self.od.buy_orders)):
+        if (self.od != {} and len(self.od.buy_orders)):
             for key, value in self.od.buy_orders.items():
                 buy_sum += key * value
                 buy_vol += value
@@ -252,7 +252,7 @@ class ProductTrader:
         else:
             best_buy = 0
 
-        if (len(self.od.sell_orders)):
+        if (self.od != {} and len(self.od.sell_orders)):
             for key, value in self.od.sell_orders.items():
                 sell_sum += key * value
                 sell_vol += value
@@ -799,22 +799,18 @@ class Trader:
 
 
         rr.balance(result)
-        logger.print("calling mm")
         rr.market_make(result)
         rr.market_take(result)
+
         kl.balance(result)
         kl.market_make(result)
 
-      
-
         si.balance(result)
         si.market_make(result)
-
        
         jams.market_make(result)
-
        
-        pb2_t = pb2.trade_residual(result)  # your custom PB2 residual logic
+        pb2.trade_residual(result)  # your custom PB2 residual logic
         pb1_t.trade_the_diff(result)
 
         traderData = json.dumps(traderData)
