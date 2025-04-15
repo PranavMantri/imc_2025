@@ -196,7 +196,7 @@ class ProductTrader:
 
         #price vars
         self.prev_prices = []
-        self.prev_price_window = ppw if ppw != 0 else 200
+        self.prev_price_window = ppw if ppw != 0 else 101
         self.best_buy = 0
         self.best_sell = 0
         self.midprice = 0
@@ -230,7 +230,9 @@ class ProductTrader:
         ######################################
         self.get_prev_prices()
 
+        ########
 
+   
     def calc_vwaps(self) -> tuple[int, int, int]:
         """
         Returns the (best_buy, midprice, best_sell) using volume weighted average products
@@ -423,8 +425,8 @@ class SquidInk(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict, result:Dict[Symbol, List[Order]], ppw:int):
         super().__init__(state, traderData, 'SQUID_INK', ppw)
 
-        self.update_td(traderData, self.midprice)
         self.trade_around = self.moving_avg()
+        #self.trade_around = self.moving_avg()
 
         # OPTIMIZABLE VARS
         # Market Making
@@ -437,22 +439,6 @@ class SquidInk(ProductTrader):
         # self.fixed_threshold = params['fixed_threshold']
         # self.big_window_size = params['big_window_size']
     
-    def update_td(self, traderData, new_mid_price):
-        """
-        For Squid Ink we maintain a sliding window
-
-        """
-        self.prev_prices = traderData[self.name].get('prev_prices', [])
-
-        if (len(self.prev_prices) == self.prev_price_window):
-            self.prev_prices.pop(0)
-
-        self.prev_prices.append(new_mid_price)
-
-        traderData[self.name]['prev_prices'] = self.prev_prices
-
-        return
-
     def moving_avg(self):
 
         bw, sw = self.get_windows()
@@ -494,7 +480,7 @@ class Croissants(ProductTrader):
 
 
     
-    def get_indicies(self) -> tuple[int,int,int]:
+    def get_indicies(self) -> tuple[int,int,int,int]:
         return (self.trader_data.get('curr_index', -1),
                 self.trader_data.get('sell_index', -1),
                 self.trader_data.get('buy_index', -1),
