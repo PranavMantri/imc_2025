@@ -145,16 +145,6 @@ class Logger:
 logger = Logger()
 
 
-class Trader:
-    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
-        result = {}
-        conversions = 0
-        trader_data = ""
-
-        # TODO: Add logic
-
-        logger.flush(state, result, conversions, trader_data)
-        return result, conversions, trader_data
 '''
 EVERYTHING ABOVE HERE NEEDED FOR BT VISUALIZER
 '''
@@ -232,7 +222,7 @@ class ProductTrader:
 
         ########
 
-   
+
     def calc_vwaps(self) -> tuple[int, int, int]:
         """
         Returns the (best_buy, midprice, best_sell) using volume weighted average products
