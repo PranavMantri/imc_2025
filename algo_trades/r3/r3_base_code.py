@@ -1,5 +1,6 @@
 import json
 from typing import Any
+import statistics
 import math
 import numpy as np
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState, Dict, List
@@ -768,6 +769,108 @@ class PB2ResidualTrader(ProductTrader):
                 result[self.name] = [Order(self.name, best_ask, size)]
 
 
+# making a new class for options kinda like ProductTrader
+class OptionsTrader:
+    def __init__(self, name, strike, expiration, option_type):
+        self.name = name
+        self.strike = strike
+        self.expiration = expiration  # in years
+        self.option_type = option_type  # 'call' or 'put'
+
+        self.od = {}
+        self.curr_pos = 0
+        self.best_bid = 0
+        self.best_ask = 0
+        self.pos_lim = 200
+        self.max_trade_size = 10
+
+        self.underlying_price = 0
+        self.implied_vol = 0.3
+        self.r = 0.01
+        self.T = expiration
+
+    def short(self, price: int, abs_quantity: int, result: Dict[str, List[Order]]):
+        result.setdefault(self.name, []).append(Order(self.name, price, -abs_quantity))
+
+    def long(self, price: int, abs_quantity: int, result: Dict[str, List[Order]]):
+        result.setdefault(self.name, []).append(Order(self.name, price, abs_quantity))
+
+    def black_scholes_call_price(self, S, K, T, r, sigma):
+        if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
+            return 0.0
+        d1 = (math.log(S / K) + (r + 0.5 * sigma**2)*T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        Nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+        Nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
+        return S * Nd1 - K * math.exp(-r*T) * Nd2
+
+
+class VR_VoucherTrader(OptionsTrader):
+    def __init__(self, name, strike, state: TradingState):
+        super().__init__(name, strike, expiration=1/365, option_type="call")
+
+        self.od = state.order_depths.get(self.name, OrderDepth())
+        self.curr_pos = state.position.get(self.name, 0)
+        self.best_bid = max(self.od.buy_orders.keys()) if self.od.buy_orders else 0
+        self.best_ask = min(self.od.sell_orders.keys()) if self.od.sell_orders else 0
+
+        # Estimate underlying price using other vouchers (assumed fair value)
+        all_mids = []
+        for product in state.order_depths:
+            if "VOLCANIC_ROCK_VOUCHER" in product:
+                od = state.order_depths[product]
+                if od.buy_orders and od.sell_orders:
+                    bid = max(od.buy_orders.keys())
+                    ask = min(od.sell_orders.keys())
+                    all_mids.append((bid + ask) / 2)
+        self.underlying_price = statistics.mean(all_mids) if all_mids else 10000
+
+    def compute_action(self):
+        market_mid = (self.best_bid + self.best_ask) / 2 if self.best_bid and self.best_ask else 0
+        bs_price = self.black_scholes_call_price(self.underlying_price, self.strike, self.T, self.r, self.implied_vol)
+        if market_mid < bs_price:
+            return "BUY"
+        elif market_mid > bs_price:
+            return "SELL"
+        return "HOLD"
+
+    def trade(self, result: Dict[str, List[Order]]):
+        action = self.compute_action()
+        if action == "BUY" and self.best_ask:
+            qty = min(self.max_trade_size, self.pos_lim - self.curr_pos)
+            if qty > 0:
+                self.long(self.best_ask, qty, result)
+        elif action == "SELL" and self.best_bid:
+            qty = min(self.max_trade_size, self.pos_lim + self.curr_pos)
+            if qty > 0:
+                self.short(self.best_bid, qty, result)
+        return result
+
+# ts was for options ykwim
+'''
+class Trader:
+    def run(self, state: TradingState):
+        traderData = json.loads(state.traderData) if state.traderData else {p: {} for p in state.order_depths}
+        result: Dict[str, List[Order]] = {}
+
+        option_configs = {
+            "VOLCANIC_ROCK_VOUCHER_9500": 9500,
+            "VOLCANIC_ROCK_VOUCHER_9750": 9750,
+            "VOLCANIC_ROCK_VOUCHER_10000": 10000,
+            "VOLCANIC_ROCK_VOUCHER_10250": 10250,
+            "VOLCANIC_ROCK_VOUCHER_10500": 10500,
+        }
+
+        for name, strike in option_configs.items():
+            trader = VR_VoucherTrader(name, strike, state)
+            trader.trade(result)
+
+        traderData = json.dumps(traderData)
+        conversions = 1
+        logger.flush(state, result, conversions, traderData)
+        return result, conversions, traderData
+'''
+
 
 class Trader:
 
@@ -817,8 +920,20 @@ class Trader:
        
         jams.market_make(result)
        
-        pb2.trade_residual(result)  # your custom PB2 residual logic
+        pb2.trade_residual(result)
         pb1_t.trade_the_diff(result)
+
+        option_configs = {
+            "VOLCANIC_ROCK_VOUCHER_9500": 9500,
+            "VOLCANIC_ROCK_VOUCHER_9750": 9750,
+            "VOLCANIC_ROCK_VOUCHER_10000": 10000,
+            "VOLCANIC_ROCK_VOUCHER_10250": 10250,
+            "VOLCANIC_ROCK_VOUCHER_10500": 10500,
+        }
+
+        for name, strike in option_configs.items():
+            trader = VR_VoucherTrader(name, strike, state)
+            trader.trade(result)
 
         traderData = json.dumps(traderData)
         conversions = 1
