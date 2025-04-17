@@ -367,14 +367,16 @@ class ProductTrader:
             bv_ = int(self.market_make_buy_vol / (backoff))
             sv_ = int(self.market_make_sell_vol / (backoff))
 
-            logger.print(f'bv_ {bv_} > self.buying_power {self.buying_power}')
-            logger.print(f'sv_ {sv_} > self.buying_power {self.buying_power}')
+            # floods logger
+            # logger.print(f'bv_ {bv_} > self.buying_power {self.buying_power}')
+            # logger.print(f'sv_ {sv_} > self.buying_power {self.buying_power}')
 
             if bv_ > self.buying_power or sv_ > self.selling_power:
                 logger.print(f"backoff {backoff}")
                 continue
 
-            logger.print(f'sv_ {self.gap} > self.buying_power {self.gap_trigger}')
+            # floods logger
+            # logger.print(f'sv_ {self.gap} > self.buying_power {self.gap_trigger}')
 
             if self.gap >= self.gap_trigger:
                 logger.print(f"backoff {backoff}")
@@ -880,7 +882,7 @@ class VR_VoucherTrader:
                 mid = (max(od.buy_orders.keys()) + min(od.sell_orders.keys())) / 2
                 iv = self.implied_volatility(mid, S, strike, self.expiration)
                 m_val = self.compute_m_t(strike, S, self.expiration)
-                if not math.isnan(iv):
+                if not math.isnan(iv) and iv > 0.01:
                     all_mtv.append((m_val, iv))
 
         if len(all_mtv) < 3:
@@ -904,10 +906,11 @@ class VR_VoucherTrader:
         fitted_iv = fitted_iv_fn(m_t)
         error = actual_iv - fitted_iv
 
-        threshold = 5
+        threshold = 50
         trade_qty = min(int(abs(error) / threshold), self.max_trade_size)
 
         # 📈 Main trade logic
+        logger.print(f"error: {error}, mid_price: {mid_price}, actual_iv: {actual_iv}, fitted_iv: {fitted_iv}")
         if error > threshold:
             qty = min(trade_qty, self.pos_lim + self.curr_pos)
             if qty > 0:
@@ -981,20 +984,20 @@ class Trader:
         pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
         vr = VRTrader(state, traderData, result, 101)
 
-        rr.balance(result)
-        rr.market_make(result)
-        rr.market_take(result)
-
-        kl.balance(result)
-        kl.market_make(result)
-
-        si.balance(result)
-        si.market_make(result)
-
-        jams.market_make(result)
-
-        pb2.trade_residual(result)
-        pb1_t.trade_the_diff(result)
+        # rr.balance(result)
+        # rr.market_make(result)
+        # rr.market_take(result)
+        #
+        # kl.balance(result)
+        # kl.market_make(result)
+        #
+        # si.balance(result)
+        # si.market_make(result)
+        #
+        # jams.market_make(result)
+        #
+        # pb2.trade_residual(result)
+        # pb1_t.trade_the_diff(result)
 
         vr.market_take(result)
 
