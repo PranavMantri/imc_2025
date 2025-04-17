@@ -1,5 +1,6 @@
 import json
 from typing import Any
+import statistics
 import math
 import numpy as np
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState, Dict, List
@@ -768,6 +769,190 @@ class PB2ResidualTrader(ProductTrader):
                 result[self.name] = [Order(self.name, best_ask, size)]
 
 
+class VRTrader(ProductTrader):
+    def __init__(self, state: TradingState, traderData: Dict, result:Dict[Symbol, List[Order]], ppw:int):
+        super().__init__(state, traderData, 'VOLCANIC_ROCK', ppw)
+
+        # GRID SEARCHED
+        self.mm_vol_r = 0.5
+        self.mt_bv = 15
+        self.mt_sv = 15
+        self.gap_trigger = 4
+        self.best_delta = 1
+
+        # NOT GRID SEARCHED (but necessary for product trader)
+        self.market_make_buy_vol = 120
+        self.market_make_sell_vol = 120
+
+
+# making a new class for options kinda like ProductTrader
+class OptionsTrader:
+    def __init__(self, name, strike, expiration, option_type):
+        self.name = name
+        self.strike = strike
+        self.expiration = expiration  # in years
+        self.option_type = option_type
+        self.pos_lim = 200
+        self.max_trade_size = 100
+        self.r = 0.01
+
+    def implied_volatility(self, market_price, S, K, T):
+        if market_price < 1e-5:
+            return float('nan')
+        low, high = 1e-6, 3.0
+        for _ in range(100):
+            mid = (low + high) / 2
+            price = self.black_scholes_call_price(S, K, T, self.r, mid)
+            if abs(price - market_price) < 1e-5:
+                return mid
+            if price > market_price:
+                high = mid
+            else:
+                low = mid
+        return (low + high) / 2
+
+    def black_scholes_call_price(self, S, K, T, r, sigma):
+        if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
+            return 0.0
+        d1 = (math.log(S / K) + (r + 0.5 * sigma**2)*T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        Nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+        Nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
+        return S * Nd1 - K * math.exp(-r*T) * Nd2
+
+    def compute_m_t(self, K, S, T):
+        return np.log(K / S) / np.sqrt(T)
+
+
+class VR_VoucherTrader:
+    def __init__(self, name, strike, state: TradingState, trader_memory):
+        self.name = name
+        self.strike = strike
+        self.expiration = 1 / 365
+        self.state = state
+
+        self.pos_lim = 200
+        self.max_trade_size = 10
+        self.option_type = "call"
+        self.r = 0.01
+
+        self.od = state.order_depths.get(name, OrderDepth())
+        self.curr_pos = state.position.get(name, 0)
+        self.best_bid = max(self.od.buy_orders.keys()) if self.od.buy_orders else 0
+        self.best_ask = min(self.od.sell_orders.keys()) if self.od.sell_orders else 0
+
+        self.timestamp = state.timestamp
+        self.memory = trader_memory.setdefault(name, {"last_price": 0})
+
+    def compute_m_t(self, K, S, T):
+        return math.log(K / S) / math.sqrt(T)
+
+    def norm_cdf(self, x):
+        return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+    def black_scholes_call_price(self, S, K, T, r, sigma):
+        if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
+            return 0.0
+        d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        return S * self.norm_cdf(d1) - K * math.exp(-r * T) * self.norm_cdf(d2)
+
+    def implied_volatility(self, market_price, S, K, T):
+        low, high = 1e-6, 4.0
+        for _ in range(20):
+            mid = (low + high) / 2
+            price = self.black_scholes_call_price(S, K, T, self.r, mid)
+            if abs(price - market_price) < 1e-4:
+                return mid
+            if price > market_price:
+                high = mid
+            else:
+                low = mid
+        return (low + high) / 2
+
+    def trade(self, result: dict[str, list[Order]]) -> dict[str, list[Order]]:
+        rock_od = self.state.order_depths.get("VOLCANIC_ROCK", OrderDepth())
+        if not (rock_od.buy_orders and rock_od.sell_orders):
+            return result
+
+        S = (max(rock_od.buy_orders.keys()) + min(rock_od.sell_orders.keys())) / 2
+
+        all_mtv = []
+        for symbol in self.state.order_depths:
+            if "VOLCANIC_ROCK_VOUCHER" not in symbol:
+                continue
+            od = self.state.order_depths[symbol]
+            if od.buy_orders and od.sell_orders:
+                strike = int(symbol.split("_")[-1])
+                mid = (max(od.buy_orders.keys()) + min(od.sell_orders.keys())) / 2
+                iv = self.implied_volatility(mid, S, strike, self.expiration)
+                m_val = self.compute_m_t(strike, S, self.expiration)
+                if not math.isnan(iv):
+                    all_mtv.append((m_val, iv))
+
+        if len(all_mtv) < 3:
+            return result
+
+        x_vals, y_vals = zip(*all_mtv)
+        coeffs = self.polyfit_2(x_vals, y_vals)
+        a, b, c = coeffs
+        fitted_iv_fn = lambda m: a * m * m + b * m + c
+
+        base_iv = fitted_iv_fn(0)
+        if base_iv > 0.6:
+            return result
+
+        if not (self.best_bid and self.best_ask):
+            return result
+
+        mid_price = (self.best_bid + self.best_ask) / 2
+        actual_iv = self.implied_volatility(mid_price, S, self.strike, self.expiration)
+        m_t = self.compute_m_t(self.strike, S, self.expiration)
+        fitted_iv = fitted_iv_fn(m_t)
+        error = actual_iv - fitted_iv
+
+        threshold = 5
+        trade_qty = min(int(abs(error) / threshold), self.max_trade_size)
+
+        # 📈 Main trade logic
+        if error > threshold:
+            qty = min(trade_qty, self.pos_lim + self.curr_pos)
+            if qty > 0:
+                result.setdefault(self.name, []).append(Order(self.name, self.best_bid, -qty))
+        elif error < -threshold:
+            qty = min(trade_qty, self.pos_lim - self.curr_pos)
+            if qty > 0:
+                result.setdefault(self.name, []).append(Order(self.name, self.best_ask, qty))
+
+        # 🔁 Unwind logic: if position is held but signal reversed
+        if self.curr_pos > 0 and error > -threshold:
+            unwind_qty = min(self.max_trade_size, self.curr_pos)
+            result.setdefault(self.name, []).append(Order(self.name, self.best_bid, -unwind_qty))
+        elif self.curr_pos < 0 and error < threshold:
+            unwind_qty = min(self.max_trade_size, -self.curr_pos)
+            result.setdefault(self.name, []).append(Order(self.name, self.best_ask, unwind_qty))
+
+        # 🧠 Track PnL context
+        self.memory["last_price"] = mid_price
+        return result
+
+    def polyfit_2(self, x, y):
+        n = len(x)
+        x1 = sum(x)
+        x2 = sum(xi**2 for xi in x)
+        x3 = sum(xi**3 for xi in x)
+        x4 = sum(xi**4 for xi in x)
+        y1 = sum(y)
+        xy = sum(xi*yi for xi, yi in zip(x, y))
+        x2y = sum(xi**2*yi for xi, yi in zip(x, y))
+
+        det = n*x2*x4 + 2*x1*x2*x3 - x2**3 - n*x3**2 - x1**2*x4
+        a_num = y1*x2*x4 + x1*xy*x3 + x2*x2y*n - x2**2*y1 - x3**2*n - x1*x4*xy
+        b_num = n*xy*x4 + y1*x2*x3 + x2*x2y*x1 - x2*xy*x2 - x3*x2y*n - x1*x4*y1
+        c_num = n*x2*x2y + x1*xy*x2 + x1*x3*y1 - x2**2*y1 - x3*x2*x1 - n*xy*x3
+        return (a_num / det, b_num / det, c_num / det)
+
+
 
 class Trader:
 
@@ -803,7 +988,7 @@ class Trader:
         jams = Jams(state, traderData, result, param_window)
         cj_t = Croissants_Jams_Trader(crst, jams)
         pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
-
+        vr = VRTrader(state, traderData, result, 101)
 
         rr.balance(result)
         rr.market_make(result)
@@ -817,8 +1002,21 @@ class Trader:
        
         jams.market_make(result)
        
-        pb2.trade_residual(result)  # your custom PB2 residual logic
+        pb2.trade_residual(result)
         pb1_t.trade_the_diff(result)
+
+        vr.market_take(result)
+
+        option_configs = {
+            "VOLCANIC_ROCK_VOUCHER_9500": 9500,
+            "VOLCANIC_ROCK_VOUCHER_9750": 9750,
+            "VOLCANIC_ROCK_VOUCHER_10000": 10000,
+            "VOLCANIC_ROCK_VOUCHER_10250": 10250,
+            "VOLCANIC_ROCK_VOUCHER_10500": 10500,
+        }
+
+        for name, strike in option_configs.items():
+            VR_VoucherTrader(name, strike, state, traderData).trade(result)
 
         traderData = json.dumps(traderData)
         conversions = 1
