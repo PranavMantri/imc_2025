@@ -189,7 +189,7 @@ class ProductTrader:
 
         # price vars
         self.prev_prices = []
-        self.prev_price_window = ppw if ppw != 0 else 101
+        self.prev_price_window = ppw
         self.best_buy = 0
         self.best_sell = 0
         self.midprice = 0
@@ -218,8 +218,9 @@ class ProductTrader:
         ######################################
         # Pull out whatever from trader_data #
         ######################################
-        self.get_prev_prices()
-        self.smooth_price = self.savgol_filter_manual(self.prev_prices)
+        if (ppw != -1):
+            self.get_prev_prices()
+            self.smooth_price = self.savgol_filter_manual(self.prev_prices)
 
         ########################
         # SMOOOOOTTTH OPERATOR #
@@ -969,14 +970,14 @@ class Trader:
 
         param_window = 101
 
-        rr = ResinTrader(state, traderData, result, param_window)
-        kl = Kelp(state, traderData, result, param_window)
+        rr = ResinTrader(state, traderData, result, -1)
+        kl = Kelp(state, traderData, result, -1)
         si = SquidInk(state, traderData, result, param_window)
         pb1 = Picnic_Basket1(state, traderData, result, param_window)
         pb2 = PB2ResidualTrader(state, traderData, result, param_window)
         crst = Croissants(state, traderData, result, param_window)
-        djem = Djembes(state, traderData, result, param_window)
-        jams = Jams(state, traderData, result, param_window)
+        djem = Djembes(state, traderData, result, -1)
+        jams = Jams(state, traderData, result, -1)
         cj_t = Croissants_Jams_Trader(crst, jams)
         pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
         vr = VRTrader(state, traderData, result, 101)
