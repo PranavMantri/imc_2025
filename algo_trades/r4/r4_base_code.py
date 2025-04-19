@@ -507,8 +507,7 @@ class Croissants(ProductTrader):
 
         (self.curr_index, self.sell_index, self.buy_index, self.end_index) = self.get_indicies()
         self.increment_curr_index() if self.end_index > 0 else None
-        logger.print(
-            f"ci {self.curr_index} sell at: {self.sell_index} buy at: {self.buy_index}, end at: {self.end_index}")
+
 
     def get_indicies(self) -> tuple[int, int, int, int]:
         return (self.trader_data.get('curr_index', -1),
@@ -845,8 +844,9 @@ class VR_VoucherTrader:
     def __init__(self, state: TradingState, vouchers, underlying: ProductTrader):
 
         self.vouchers = vouchers
-        self.expiration = 1 / 365
+        self.expiration = 6 / 365
         self.state = state
+        self.underlying = underlying
         self.S = underlying.midprice
 
 
@@ -901,9 +901,11 @@ class VR_VoucherTrader:
             return result
 
         x_vals, y_vals = zip(*all_mtv)
-        coeffs = self.polyfit_2(x_vals, y_vals)
-        a, b, c = coeffs
-        fitted_iv_fn = lambda m: a * m * m + b * m + c
+        #coeffs = self.polyfit_2(x_vals, y_vals)
+        coeffs = np.polyfit(x_vals, y_vals, len(all_mtv) - 2)
+        #, b, c = coeffs
+        #fitted_iv_fn = lambda m: a * m * m + b * m + c
+        fitted_iv_fn = np.poly1d(coeffs)
 
         base_iv = fitted_iv_fn(0)
 
@@ -915,27 +917,41 @@ class VR_VoucherTrader:
             fitted_iv = fitted_iv_fn(v.mt)
             error = v.iv - fitted_iv
 
-            threshold = 50
-            trade_qty = min(int(abs(error) / threshold), self.max_trade_size)
+            if v.iv < 0.01:
+                continue
 
-            # 📈 Main trade logic
-            logger.print(f"error: {error}, mid_price: {v.midprice}, actual_iv: {v.iv}, fitted_iv: {fitted_iv}")
-            if error > threshold:
-                qty = min(trade_qty, v.pos_lim + v.curr_pos)
-                if qty > 0:
-                    result.setdefault(v.name, []).append(Order(v.name, v.best_sell, -qty))
-            elif error < -threshold:
-                qty = min(trade_qty, v.pos_lim - v.curr_pos)
-                if qty > 0:
-                    result.setdefault(v.name, []).append(Order(v.name, v.best_buy, qty))
+            # Compute a base threshold depending only on DTE and moneyness
+            # 🧠 Adjust threshold based on DTE, moneyness, and midprice
+            base_threshold = 0.005
+            dte_factor = max(0.2, 4 / 30)  # Scales down for short expiry, caps at 1
+            threshold = (base_threshold + 0.01 * abs(v.mt) + 0.02 * v.midprice / 1000) * dte_factor
 
-            # 🔁 Unwind logic: if position is held but signal reversed
+            # 📊 Log for visibility
+            logger.print(f"{v.strike} has mtv: {v.mt} and iv: {v.iv}")
+            logger.print(f"error: {error}, threshold: {threshold}, actual_iv: {v.iv}, fitted_iv: {fitted_iv}")
+
+            # 🧾 Trading logic
+            buffer = 0.5 * threshold  # Soft zone to reduce false positives
+
+            if abs(error) > threshold + buffer:
+                # Scale trade size based on how far beyond threshold the error is
+                scale = (abs(error) - threshold) / (threshold + buffer)
+                trade_qty = min(int(scale * self.max_trade_size), self.max_trade_size)
+
+                if error > 0:
+                    qty = min(trade_qty, v.pos_lim + v.curr_pos)
+                    if qty > 0:
+                        result.setdefault(v.name, []).append(Order(v.name, v.best_buy, -qty))
+                else:
+                    qty = min(trade_qty, v.pos_lim - v.curr_pos)
+                    if qty > 0:
+                        result.setdefault(v.name, []).append(Order(v.name, v.best_sell, qty))
+
+            # Close any stale positions once the signal is gone
             if v.curr_pos > 0 and error > -threshold:
-                unwind_qty = v.curr_pos
-                result.setdefault(v.name, []).append(Order(v.name, v.best_sell, -unwind_qty))
+                v.balance(result)
             elif v.curr_pos < 0 and error < threshold:
-                unwind_qty =  -v.curr_pos
-                result.setdefault(v.name, []).append(Order(v.name, v.best_buy, unwind_qty))
+                v.balance(result)
 
         return result
 
@@ -954,6 +970,21 @@ class VR_VoucherTrader:
         b_num = n * xy * x4 + y1 * x2 * x3 + x2 * x2y * x1 - x2 * xy * x2 - x3 * x2y * n - x1 * x4 * y1
         c_num = n * x2 * x2y + x1 * xy * x2 + x1 * x3 * y1 - x2 ** 2 * y1 - x3 * x2 * x1 - n * xy * x3
         return (a_num / det, b_num / det, c_num / det)
+
+    def kamikaze(self, result: dict[str, list[Order]]):
+        for v in self.vouchers:
+            orders = [Order(v.name, v.best_buy , -(v.pos_lim - v.curr_pos))]
+            if v.name in result:
+                result[v.name].extend(orders)
+            else:
+                result[v.name] = orders
+
+        underlying_orders = [
+            Order(self.underlying.name, self.underlying.best_buy, self.underlying.pos_lim - self.underlying.curr_pos)]
+        if self.underlying.name in result:
+            result[self.underlying.name].extend(underlying_orders)
+        else:
+            result[self.underlying.name] = underlying_orders
 
 
 class Trader:
@@ -1008,6 +1039,7 @@ class Trader:
 
         #vr.market_take(result)
 
+
         option_configs = {
             "VOLCANIC_ROCK_VOUCHER_9500": 9500,
             "VOLCANIC_ROCK_VOUCHER_9750": 9750,
@@ -1020,7 +1052,13 @@ class Trader:
         for name, strike in option_configs.items():
             #VR_VoucherTrader(name, strike, state, traderData).trade(result)
             vouchers.append(voucher(name, strike, state, traderData, 101))
-        VR_VoucherTrader(  state, vouchers,vr).trade(result)
+        VR = VR_VoucherTrader(  state, vouchers,vr)
+        VR.trade(result)
+
+        #VR.kamikaze(result)
+
+
+
 
         traderData = json.dumps(traderData)
         conversions = 1
