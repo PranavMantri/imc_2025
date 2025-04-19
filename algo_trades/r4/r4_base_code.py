@@ -3,6 +3,8 @@ from typing import Any
 import statistics
 import math
 import numpy as np
+
+
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState, Dict, \
     List
 import time
@@ -160,7 +162,12 @@ LIMITS = {
     'DJEMBES': 60,
     'PICNIC_BASKET1': 60,
     'PICNIC_BASKET2': 100,
-    'VOLCANIC_ROCK': 400
+    'VOLCANIC_ROCK': 400,
+    "VOLCANIC_ROCK_VOUCHER_9500": 9500,
+    "VOLCANIC_ROCK_VOUCHER_9750": 9750,
+    "VOLCANIC_ROCK_VOUCHER_10000": 10000,
+    "VOLCANIC_ROCK_VOUCHER_10250": 10250,
+    "VOLCANIC_ROCK_VOUCHER_10500": 10500,
 }
 
 PROD_TR_AR = {
@@ -172,7 +179,12 @@ PROD_TR_AR = {
     'DJEMBES': -1,
     'PICNIC_BASKET1': -1,
     'PICNIC_BASKET2': -1,
-    'VOLCANIC_ROCK': -1
+    'VOLCANIC_ROCK': -1,
+    "VOLCANIC_ROCK_VOUCHER_9500": 9500,
+    "VOLCANIC_ROCK_VOUCHER_9750": 9750,
+    "VOLCANIC_ROCK_VOUCHER_10000": 10000,
+    "VOLCANIC_ROCK_VOUCHER_10250": 10250,
+    "VOLCANIC_ROCK_VOUCHER_10500": 10500,
 }
 
 
@@ -271,7 +283,8 @@ class ProductTrader:
             for key, value in self.od.buy_orders.items():
                 buy_sum += key * value
                 buy_vol += value
-            best_buy = int(math.ceil(buy_sum / buy_vol))
+
+            best_buy = int(math.ceil(buy_sum / buy_vol)) if buy_vol != 0 else 0
         else:
             best_buy = 0
 
@@ -818,26 +831,30 @@ class OptionsTrader:
     def compute_m_t(self, K, S, T):
         return np.log(K / S) / np.sqrt(T)
 
+class voucher(ProductTrader):
+    def __init__(self, name, strike, state: TradingState ,traderData: Dict, ppw: int):
+        super().__init__(state, traderData, name, ppw)
+        self.exp = 1/365
+        self.strike = strike
+        self.pos_lim = 200
+        self.iv = None
+        self.mt = None
+
 
 class VR_VoucherTrader:
-    def __init__(self, name, strike, state: TradingState, trader_memory):
-        self.name = name
-        self.strike = strike
+    def __init__(self, state: TradingState, vouchers, underlying: ProductTrader):
+
+        self.vouchers = vouchers
         self.expiration = 1 / 365
         self.state = state
+        self.S = underlying.midprice
 
-        self.pos_lim = 200
+
         self.max_trade_size = 10
-        self.option_type = "call"
+
         self.r = 0.01
 
-        self.od = state.order_depths.get(name, OrderDepth())
-        self.curr_pos = state.position.get(name, 0)
-        self.best_bid = max(self.od.buy_orders.keys()) if self.od.buy_orders else 0
-        self.best_ask = min(self.od.sell_orders.keys()) if self.od.sell_orders else 0
-
         self.timestamp = state.timestamp
-        self.memory = trader_memory.setdefault(name, {"last_price": 0})
 
     def compute_m_t(self, K, S, T):
         return math.log(K / S) / math.sqrt(T)
@@ -873,17 +890,12 @@ class VR_VoucherTrader:
         S = (max(rock_od.buy_orders.keys()) + min(rock_od.sell_orders.keys())) / 2
 
         all_mtv = []
-        for symbol in self.state.order_depths:
-            if "VOLCANIC_ROCK_VOUCHER" not in symbol:
-                continue
-            od = self.state.order_depths[symbol]
-            if od.buy_orders and od.sell_orders:
-                strike = int(symbol.split("_")[-1])
-                mid = (max(od.buy_orders.keys()) + min(od.sell_orders.keys())) / 2
-                iv = self.implied_volatility(mid, S, strike, self.expiration)
-                m_val = self.compute_m_t(strike, S, self.expiration)
-                if not math.isnan(iv) and iv > 0.01:
-                    all_mtv.append((m_val, iv))
+
+        for v in self.vouchers:
+            v.iv = self.implied_volatility(v.midprice, S, v.strike, v.exp)
+            v.mt = self.compute_m_t(v.strike, S, v.exp)
+            if not math.isnan(v.iv) and v.iv > 0.01:
+                all_mtv.append((v.mt, v.iv))
 
         if len(all_mtv) < 3:
             return result
@@ -894,42 +906,37 @@ class VR_VoucherTrader:
         fitted_iv_fn = lambda m: a * m * m + b * m + c
 
         base_iv = fitted_iv_fn(0)
-        if base_iv > 0.6:
-            return result
 
-        if not (self.best_bid and self.best_ask):
-            return result
+        #?
+        # if base_iv > 0.6:
+        #     return result
 
-        mid_price = (self.best_bid + self.best_ask) / 2
-        actual_iv = self.implied_volatility(mid_price, S, self.strike, self.expiration)
-        m_t = self.compute_m_t(self.strike, S, self.expiration)
-        fitted_iv = fitted_iv_fn(m_t)
-        error = actual_iv - fitted_iv
+        for v in self.vouchers:
+            fitted_iv = fitted_iv_fn(v.mt)
+            error = v.iv - fitted_iv
 
-        threshold = 50
-        trade_qty = min(int(abs(error) / threshold), self.max_trade_size)
+            threshold = 50
+            trade_qty = min(int(abs(error) / threshold), self.max_trade_size)
 
-        # 📈 Main trade logic
-        logger.print(f"error: {error}, mid_price: {mid_price}, actual_iv: {actual_iv}, fitted_iv: {fitted_iv}")
-        if error > threshold:
-            qty = min(trade_qty, self.pos_lim + self.curr_pos)
-            if qty > 0:
-                result.setdefault(self.name, []).append(Order(self.name, self.best_bid, -qty))
-        elif error < -threshold:
-            qty = min(trade_qty, self.pos_lim - self.curr_pos)
-            if qty > 0:
-                result.setdefault(self.name, []).append(Order(self.name, self.best_ask, qty))
+            # 📈 Main trade logic
+            logger.print(f"error: {error}, mid_price: {v.midprice}, actual_iv: {v.iv}, fitted_iv: {fitted_iv}")
+            if error > threshold:
+                qty = min(trade_qty, v.pos_lim + v.curr_pos)
+                if qty > 0:
+                    result.setdefault(v.name, []).append(Order(v.name, v.best_sell, -qty))
+            elif error < -threshold:
+                qty = min(trade_qty, v.pos_lim - v.curr_pos)
+                if qty > 0:
+                    result.setdefault(v.name, []).append(Order(v.name, v.best_buy, qty))
 
-        # 🔁 Unwind logic: if position is held but signal reversed
-        if self.curr_pos > 0 and error > -threshold:
-            unwind_qty = min(self.max_trade_size, self.curr_pos)
-            result.setdefault(self.name, []).append(Order(self.name, self.best_bid, -unwind_qty))
-        elif self.curr_pos < 0 and error < threshold:
-            unwind_qty = min(self.max_trade_size, -self.curr_pos)
-            result.setdefault(self.name, []).append(Order(self.name, self.best_ask, unwind_qty))
+            # 🔁 Unwind logic: if position is held but signal reversed
+            if v.curr_pos > 0 and error > -threshold:
+                unwind_qty = v.curr_pos
+                result.setdefault(v.name, []).append(Order(v.name, v.best_sell, -unwind_qty))
+            elif v.curr_pos < 0 and error < threshold:
+                unwind_qty =  -v.curr_pos
+                result.setdefault(v.name, []).append(Order(v.name, v.best_buy, unwind_qty))
 
-        # 🧠 Track PnL context
-        self.memory["last_price"] = mid_price
         return result
 
     def polyfit_2(self, x, y):
@@ -999,7 +1006,7 @@ class Trader:
         # pb2.trade_residual(result)
         # pb1_t.trade_the_diff(result)
 
-        vr.market_take(result)
+        #vr.market_take(result)
 
         option_configs = {
             "VOLCANIC_ROCK_VOUCHER_9500": 9500,
@@ -1009,8 +1016,11 @@ class Trader:
             "VOLCANIC_ROCK_VOUCHER_10500": 10500,
         }
 
+        vouchers= []
         for name, strike in option_configs.items():
-            VR_VoucherTrader(name, strike, state, traderData).trade(result)
+            #VR_VoucherTrader(name, strike, state, traderData).trade(result)
+            vouchers.append(voucher(name, strike, state, traderData, 101))
+        VR_VoucherTrader(  state, vouchers,vr).trade(result)
 
         traderData = json.dumps(traderData)
         conversions = 1
