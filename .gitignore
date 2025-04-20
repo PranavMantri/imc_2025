@@ -4,3 +4,5 @@
 /algo_trades/backtests
 /algo_trades/rr/backtests
 __pycache__
+
+notebooks/*checkpoint*
