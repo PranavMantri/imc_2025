@@ -322,12 +322,14 @@ class ProductTrader:
 
     # ABSOLUTE VALUES OF VOLUME
     def short(self, price: int, abs_quantity: int, result: Dict[str, List[Order]]):
+        if abs_quantity == 0: return
         if self.name in result:
             result[self.name].extend([Order(self.name, price, -abs_quantity)])
         else:
             result[self.name] = [Order(self.name, price, -abs_quantity)]
 
     def long(self, price: int, abs_quantity: int, result: Dict[str, List[Order]]):
+        if abs_quantity == 0: return
         if self.name in result:
             result[self.name].extend([Order(self.name, price, abs_quantity)])
         else:
@@ -448,15 +450,25 @@ class SquidInk(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict, result: Dict[Symbol, List[Order]], ppw: int):
         super().__init__(state, traderData, 'SQUID_INK', ppw)
 
-        self.trade_around = self.moving_avg()
-        # self.trade_around = self.moving_avg()
+
+        self.trade_around = (self.best_buy + self.best_sell) / 2
+        logger.print(f"trade_around: {self.trade_around}")
 
         # OPTIMIZABLE VARS
         # Market Making
-        self.mm_vol_r = 0.5
-        self.gap_trigger = 2
-        self.best_delta = 3
+        params = {'market_make_frac_vol': 0.5, 'gap_trigger': 3, 'best_delta': 1}
+        self.market_make_frac_vol = params['market_make_frac_vol']
+        self.gap_trigger = params['gap_trigger']
+        self.best_delta = params['best_delta']
 
+        # Follow Olivia
+        self.olivia_orders = state.market_trades.get(self.name, [])
+        self.olivia_orders = [trade for trade in self.olivia_orders if trade.buyer == "Olivia" or trade.seller == "Olivia"]
+        self.short_sell = min(self.od.buy_orders.keys())
+        self.long_buy = max(self.od.sell_orders.keys())
+        self.olivias_position = traderData[self.name].get('olivias_position', 0)
+    
+        
         # Moving Avg
         # self.ma_vol_r = params['ma_vol_r']
         # self.fixed_threshold = params['fixed_threshold']
@@ -473,14 +485,30 @@ class SquidInk(ProductTrader):
     def get_windows(self):
         return self.prev_prices, self.prev_prices[-(self.prev_price_window // 2):]
 
-    def market_take(self, result: Dict[str, List[Order]]):
-        orders: List[Order] = []
+    def follow_olivia(self, result: Dict[str, List[Order]], traderData: Dict):
+        """
+        This algorithim simply dumps our whole position-lim into whichever direction
+        Olivia is in. If she isn't in any direction we attempt to market make.
+        """
+        for trade in self.olivia_orders:
 
-        if len(self.prev_prices) < self.prev_price_window:
-            logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.prev_price_window}")
-            return
+            if trade.buyer == "Olivia":
+                self.olivias_position += trade.quantity
 
-        super().market_take(result)
+            if trade.seller == "Olivia":
+                self.olivias_position -= trade.quantity
+
+        if self.olivias_position < 0:
+            self.short(self.short_sell, self.selling_power, result)
+        elif self.olivias_position > 0:
+            self.long(self.long_buy, self.buying_power, result)
+        else:
+            self.balance(result)
+            self.market_take(result)
+
+        traderData[self.name]['olivias_position'] = self.olivias_position
+
+        return 
 
 
 class Croissants(ProductTrader):
@@ -1162,34 +1190,36 @@ class Trader:
 
         result: Dict[str, List[Order]] = {}
 
-        param_window = 101
+        param_window = -1
 
-        rr = ResinTrader(state, traderData, result, -1)
-        kl = Kelp(state, traderData, result, -1)
+        # rr = ResinTrader(state, traderData, result, -1)
+        # kl = Kelp(state, traderData, result, -1)
         si = SquidInk(state, traderData, result, param_window)
-        pb1 = Picnic_Basket1(state, traderData, result, param_window)
-        pb2 = PB2ResidualTrader(state, traderData, result, param_window)
-        crst = Croissants(state, traderData, result, param_window)
-        djem = Djembes(state, traderData, result, -1)
-        jams = Jams(state, traderData, result, -1)
-        cj_t = Croissants_Jams_Trader(crst, jams)
-        pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
-        vr = VRTrader(state, traderData, result, 101)
+        # pb1 = Picnic_Basket1(state, traderData, result, param_window)
+        # pb2 = PB2ResidualTrader(state, traderData, result, param_window)
+        # crst = Croissants(state, traderData, result, param_window)
+        # djem = Djembes(state, traderData, result, -1)
+        # jams = Jams(state, traderData, result, -1)
+        # cj_t = Croissants_Jams_Trader(crst, jams)
+        # pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
+        # vr = VRTrader(state, traderData, result, 101)
 
-        rr.balance(result)
-        rr.market_make(result)
-        rr.market_take(result)
+        # rr.balance(result)
+        # rr.market_make(result)
+        # rr.market_take(result)
 
-        kl.balance(result)
-        kl.market_make(result)
+        # kl.balance(result)
+        # kl.market_make(result)
 
-        si.balance(result)
-        si.market_make(result)
+        # si.balance(result)
+        # si.market_make(result)
+        si.follow_olivia(result, traderData)
 
-        jams.market_make(result)
 
-        pb2.trade_residual(result)
-        pb1_t.trade_the_diff(result)
+        # jams.market_make(result)
+
+        # pb2.trade_residual(result)
+        # pb1_t.trade_the_diff(result)
 
         #vr.market_take(result)
 
@@ -1202,14 +1232,14 @@ class Trader:
         }
 
        
-        for name, strike in option_configs.items():
-            VR_VoucherTrader(name, strike, state, traderData).trade(result)
+        # for name, strike in option_configs.items():
+        #     VR_VoucherTrader(name, strike, state, traderData).trade(result)
      
         
         # mm = Macarons(state,traderData, result, 101, self.params['edge'])
         
-        mm = Macarons(state,traderData, result, 101, -4)
-        conversions = mm.convert(result)
+        # mm = Macarons(state,traderData, result, 101, -4)
+        conversions = 0 # conversions = mm.convert(result)
         traderData = json.dumps(traderData)
         logger.flush(state, result, conversions, traderData)
 
