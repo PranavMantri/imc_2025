@@ -383,18 +383,13 @@ class ProductTrader:
             bv_ = int(self.market_make_buy_vol / (backoff))
             sv_ = int(self.market_make_sell_vol / (backoff))
 
-            logger.print(f'bv_ {bv_} > self.buying_power {self.buying_power}')
-            logger.print(f'sv_ {sv_} > self.buying_power {self.buying_power}')
+          
 
             if bv_ > self.buying_power or sv_ > self.selling_power:
-                logger.print(f"backoff {backoff}")
                 continue
 
-            logger.print(f'sv_ {self.gap} > self.buying_power {self.gap_trigger}')
 
             if self.gap >= self.gap_trigger:
-                logger.print(f"backoff {backoff}")
-
                 orders.append(Order(self.name, self.best_buy + 1, bv_))
                 orders.append(Order(self.name, self.best_sell - 1, -sv_))
                 break
@@ -461,15 +456,24 @@ class SquidInk(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict, result: Dict[Symbol, List[Order]], ppw: int):
         super().__init__(state, traderData, 'SQUID_INK', ppw)
 
-        self.trade_around = self.moving_avg()
-        # self.trade_around = self.moving_avg()
+
+        self.trade_around = (self.best_buy + self.best_sell) / 2
 
         # OPTIMIZABLE VARS
         # Market Making
-        self.mm_vol_r = 0.5
-        self.gap_trigger = 2
-        self.best_delta = 3
+        params = {'market_make_frac_vol': 0.5, 'gap_trigger': 3, 'best_delta': 1}
+        self.market_make_frac_vol = params['market_make_frac_vol']
+        self.gap_trigger = params['gap_trigger']
+        self.best_delta = params['best_delta']
 
+        # Follow Olivia
+        self.olivia_orders = state.market_trades.get(self.name, [])
+        self.olivia_orders = [trade for trade in self.olivia_orders if trade.buyer == "Olivia" or trade.seller == "Olivia"]
+        self.short_sell = min(self.od.buy_orders.keys())
+        self.long_buy = max(self.od.sell_orders.keys())
+        self.olivias_position = traderData[self.name].get('olivias_position', 0)
+    
+        
         # Moving Avg
         # self.ma_vol_r = params['ma_vol_r']
         # self.fixed_threshold = params['fixed_threshold']
@@ -486,14 +490,31 @@ class SquidInk(ProductTrader):
     def get_windows(self):
         return self.prev_prices, self.prev_prices[-(self.prev_price_window // 2):]
 
-    def market_take(self, result: Dict[str, List[Order]]):
-        orders: List[Order] = []
+    def follow_olivia(self, result: Dict[str, List[Order]], traderData: Dict):
+        """
+        This algorithim simply dumps our whole position-lim into whichever direction
+        Olivia is in. If she isn't in any direction we attempt to market make.
+        """
+        for trade in self.olivia_orders:
 
-        if len(self.prev_prices) < self.prev_price_window:
-            logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.prev_price_window}")
-            return
+            if trade.buyer == "Olivia":
+                self.olivias_position += trade.quantity
 
-        super().market_take(result)
+            if trade.seller == "Olivia":
+                self.olivias_position -= trade.quantity
+
+        if self.olivias_position < 0:
+            self.short(self.short_sell, self.selling_power, result)
+        elif self.olivias_position > 0:
+            self.long(self.long_buy, self.buying_power, result)
+        else:
+            self.balance(result)
+            self.market_take(result)
+
+        traderData[self.name]['olivias_position'] = self.olivias_position
+
+        return 
+
 
 
 class Croissants(ProductTrader):
@@ -508,8 +529,7 @@ class Croissants(ProductTrader):
 
         (self.curr_index, self.sell_index, self.buy_index, self.end_index) = self.get_indicies()
         self.increment_curr_index() if self.end_index > 0 else None
-        logger.print(
-            f"ci {self.curr_index} sell at: {self.sell_index} buy at: {self.buy_index}, end at: {self.end_index}")
+        
 
     def get_indicies(self) -> tuple[int, int, int, int]:
         return (self.trader_data.get('curr_index', -1),
@@ -532,23 +552,19 @@ class Croissants(ProductTrader):
         orders: List[Order] = []
         if self.curr_index < 0 or self.buy_index < 0 or self.sell_index < 0:
             self.balance(result)
-            logger.print("at least 1 index less than 0!")
             return
 
         # all indicies are valid
 
         if self.curr_index == self.buy_index:
             # time to buy!
-            logger.print("now we long")
             orders.append(Order(self.name, self.best_sell, self.buying_power))
 
         elif self.curr_index == self.sell_index:
             # time to sell!
-            logger.print("now we short")
             orders.append(Order(self.name, self.best_buy, self.selling_power))
 
         elif self.curr_index >= self.end_index:
-            logger.print("at the end, now we balance")
             self.balance(result)
             self.set_indicies(-2, -2, -2, -2)
             return
@@ -574,7 +590,6 @@ class Croissants_Jams_Trader():
     def predict_the_future(self, result: Dict[Symbol, List[Order]]):
 
         if (self.crst.end_index > 0):
-            logger.print(f"we still have {self.crst.end_index - self.crst.curr_index} left!")
             return
 
         # effectively wait 1 timestamp for the position to clear
@@ -584,7 +599,6 @@ class Croissants_Jams_Trader():
 
         # here means that we need to set the indicies!
         if (len(self.jams.prev_prices) < self.jams.prev_price_window):
-            logger.print("not enough prices yet!")
             return
 
         ## we have enough prices to do some min-maxxing
@@ -599,19 +613,15 @@ class Croissants_Jams_Trader():
         max_index = self.jams.prev_prices.index(max_val)
         min_index = self.jams.prev_prices.index(min_val)
 
-        logger.print(f'min_index is {min_index} and max_index is {max_index}')
 
         # TODO: ADD A MIN DIFF BETWEEN CURR, MIN, MAX, END
         if (min_index < max_index):
             # short to the min, long min -> max, short max -> end
-            logger.print("we are going to short first!")
             if (min_index != 0):
                 orders.append(Order(self.crst.name, self.crst.best_buy, self.crst.selling_power))
                 self.crst.set_indicies(0, max_index, min_index, self.jams.prev_price_window)
 
         else:
-            logger.print("we are going to long first!")
-
             # long to the max, short max -> min, long max ->end
             if (max_index != 0):
                 orders.append(Order(self.crst.name, self.crst.best_sell, self.crst.buying_power))
@@ -674,7 +684,7 @@ class pb1_trader(ProductTrader):
             if (self.check_lims() < 0):
                 return
 
-            self.short_synthetics(result)
+            #self.short_synthetics(result)
 
             # TODO: CALL ANOTHER FUNCTION THAT MAKES ALL OF THESE TRADES.
             # TODO: THINK ABOUT WHAT HAPPENS IF A SINGLE ONE OF THESE TRADES
@@ -688,7 +698,7 @@ class pb1_trader(ProductTrader):
         elif (self.market_diff > 0):
             if (self.check_lims() > 0):
                 return
-            self.long_synthetics(result)
+            #self.long_synthetics(result)
 
             # TODO: what price? what amount?
             orders.append(Order(self.pb1.name, self.pb1.best_buy, -10))
@@ -825,7 +835,6 @@ class Macarons(ProductTrader):
         
         if self.implied_ask < self.prev_sell_price:
             #then buying will close our short and make money!
-            logger.print("importing!")
             orders.append(Order(self.name, int(self.implied_ask - self.edge), self.curr_pos))
             if self.name in result:
                 result[self.name].extend(orders)
@@ -897,15 +906,12 @@ def black_scholes_call(spot, strike, time_to_expiry, volatility):
 @staticmethod
 def delta(spot, strike, time_to_expiry, volatility):
 
-    logger.print(f"spot={spot}, strike={strike}, TTE={time_to_expiry}, vol={volatility}")
-
     if spot <= 0 or strike <= 0 or time_to_expiry <= 0 or volatility <= 0:
         return float('nan')  # or float('nan') or raise ValueError("Invalid inputs to Black-Scholes")
     d1 = (
         log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry
     ) / (volatility * sqrt(time_to_expiry))
 
-    logger.print(f'norm dist = {NormalDist().cdf(d1)}')
     return NormalDist().cdf(d1)
 
 @staticmethod
@@ -958,7 +964,7 @@ class options_trader():
     def __init__(self, timestamp:int, v_array:List[Voucher], underlying:Volcanic_Rock):
 
         #TODO:::::: MUST CHANGE THIS 
-        self.DTE = 4
+        self.DTE = 3
         self.tte = ((1_000_000 * self.DTE) - timestamp) / (1_000_000 * 250)
 
         self.v_array = v_array
@@ -972,7 +978,6 @@ class options_trader():
         if len(self.underlying.prev_prices) < 100:
             return result
 
-        logger.print(f'underlying mid = {self.underlying.midprice}')
         strike_candidates = [9500, 9750, 10000, 10250, 10500]
         closest_strike = min(strike_candidates, key=lambda s: abs(s - self.underlying.midprice))
         atm_voucher = next(v for v in self.v_array if v.strike == closest_strike)
@@ -991,7 +996,6 @@ class options_trader():
         vol_ratio = iv / realized_vol
 
         # If vol is too high, sell vouchers and hedge
-        logger.print(f"vol ratio = {vol_ratio:.2f}, iv = {iv:.4f}, realized_vol = {realized_vol:.4f}")
         if vol_ratio > 30:
             if vol_ratio > 40 and atm_voucher.curr_pos > -atm_voucher.pos_lim:
                 qty = -atm_voucher.pos_lim - atm_voucher.curr_pos  # move to full short
@@ -1033,7 +1037,6 @@ class options_trader():
         # Rebalance hedge if delta changed
         target_underlying_pos = curr_delta * atm_voucher.curr_pos
         delta_diff = target_underlying_pos - self.underlying.curr_pos
-        logger.print(f"curr_delta = {curr_delta:.4f}, delta_diff = {delta_diff:.2f}, iv = {iv:.4f}")
 
         if abs(delta_diff) >= 2:
             hedge_price = self.underlying.best_sell if delta_diff > 0 else self.underlying.best_buy
@@ -1143,10 +1146,7 @@ class Trader:
         kl.balance(result)
         kl.market_make(result)
 
-        si.balance(result)
-        si.market_make(result)
-
-        jams.market_make(result)
+        si.follow_olivia(result, traderData)
      
         # mm = Macarons(state,traderData, result, 101, self.params['edge'])
         
