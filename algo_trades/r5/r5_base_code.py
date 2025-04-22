@@ -1190,38 +1190,36 @@ class Trader:
 
         result: Dict[str, List[Order]] = {}
 
-        param_window = -1
+        param_window = 101
 
-        # rr = ResinTrader(state, traderData, result, -1)
-        # kl = Kelp(state, traderData, result, -1)
+        rr = ResinTrader(state, traderData, result, -1)
+        kl = Kelp(state, traderData, result, -1)
         si = SquidInk(state, traderData, result, param_window)
-        # pb1 = Picnic_Basket1(state, traderData, result, param_window)
-        # pb2 = PB2ResidualTrader(state, traderData, result, param_window)
-        # crst = Croissants(state, traderData, result, param_window)
-        # djem = Djembes(state, traderData, result, -1)
-        # jams = Jams(state, traderData, result, -1)
-        # cj_t = Croissants_Jams_Trader(crst, jams)
-        # pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
-        # vr = VRTrader(state, traderData, result, 101)
+        pb1 = Picnic_Basket1(state, traderData, result, param_window)
+        pb2 = PB2ResidualTrader(state, traderData, result, param_window)
+        crst = Croissants(state, traderData, result, param_window)
+        djem = Djembes(state, traderData, result, -1)
+        jams = Jams(state, traderData, result, -1)
+        cj_t = Croissants_Jams_Trader(crst, jams)
+        pb1_t = pb1_trader(traderData, pb1, crst, jams, djem)
+        vr = VRTrader(state, traderData, result, 101)
 
-        # rr.balance(result)
-        # rr.market_make(result)
-        # rr.market_take(result)
+        rr.balance(result)
+        rr.market_make(result)
+        rr.market_take(result)
 
-        # kl.balance(result)
-        # kl.market_make(result)
+        kl.balance(result)
+        kl.market_make(result)
 
-        # si.balance(result)
-        # si.market_make(result)
         si.follow_olivia(result, traderData)
 
 
-        # jams.market_make(result)
+        jams.market_make(result)
 
-        # pb2.trade_residual(result)
-        # pb1_t.trade_the_diff(result)
+        pb2.trade_residual(result)
+        pb1_t.trade_the_diff(result)
 
-        #vr.market_take(result)
+        # vr.market_take(result)
 
         option_configs = {
             "VOLCANIC_ROCK_VOUCHER_9500": 9500,
@@ -1232,14 +1230,14 @@ class Trader:
         }
 
        
-        # for name, strike in option_configs.items():
-        #     VR_VoucherTrader(name, strike, state, traderData).trade(result)
+        for name, strike in option_configs.items():
+            VR_VoucherTrader(name, strike, state, traderData).trade(result)
      
         
         # mm = Macarons(state,traderData, result, 101, self.params['edge'])
         
-        # mm = Macarons(state,traderData, result, 101, -4)
-        conversions = 0 # conversions = mm.convert(result)
+        mm = Macarons(state,traderData, result, 101, -4)
+        conversions = mm.convert(result)
         traderData = json.dumps(traderData)
         logger.flush(state, result, conversions, traderData)
 
