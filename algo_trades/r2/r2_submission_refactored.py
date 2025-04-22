@@ -176,6 +176,7 @@ PROD_TR_AR = {
 }
 #GLOBALS
 class ProductTrader:
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
 
     def __init__(self, state:TradingState, traderDict:Dict, name:str, ppw:int):
         
@@ -242,6 +243,40 @@ class ProductTrader:
                 buy_sum += key * value
                 buy_vol += value
             best_buy = int(math.ceil(buy_sum / buy_vol))            
+=======
+    def __init__(self, name):
+            
+            self.name = name
+            self.od = Dict[Symbol, OrderDepth]
+            self.curr_pos = 0
+            self.curr_sell_vol = 0
+            self.curr_buy_vol = 0
+            
+            # Market Making
+            self.pos_lim = 0
+            self.best_sell = 0
+            self.best_buy = 0
+            self.best_delta = 0
+            self.backoff = 0
+            
+            # Market Taking
+            self.trade_around = 0
+            self.mt_bv = 0
+            self.mt_sv = 0
+            
+            # Moving Avg
+            self.midprice = 0
+            self.big_window_size =100
+            self.ma_bv = 20
+            self.ma_sv = -20
+
+            #big mean - small mean
+            self.prev_diff = 0
+
+    def short(self, price: int, abs_quantity: int, result: Dict[str, List[Order]]):
+        if self.name in result:
+            result[self.name].extend([Order(self.name, price, -abs_quantity)])
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         else:
             best_buy = 0
 
@@ -302,23 +337,34 @@ class ProductTrader:
         else:
             result[self.name] = [Order(self.name, price, abs_quantity)]
 
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
     def market_take(self, result: Dict[str, List[Order]]):
+=======
+    def market_take(self, result:Dict[str,List[Order]]):
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         orders: List[Order] = []
 
-        # TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
+        #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
         i = 0
         for key, val in self.od.buy_orders.items():
             i += 1
-            if (i > 3):
+            if(i > 3):
                 break
             if (key > self.trade_around):
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
                 orders.append(Order(self.name, key, -self.market_take_sell_vol))
                 self.selling_power -= self.market_take_sell_vol
         
+=======
+                orders.append(Order(self.name, key, self.mt_sv))
+                self.curr_sell_vol += -val
+
+
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         j = 0
         for key, val in self.od.sell_orders.items():
             j += 1
-            if (j > 3):
+            if(j > 3):
                 break
             if (key < self.trade_around):
                 orders.append(Order(self.name, key, self.market_take_buy_vol))
@@ -328,12 +374,18 @@ class ProductTrader:
             result[self.name].extend(orders)
         else:
             result[self.name] = orders
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
     
     def market_make(self, result: Dict[str, List[Order]]):
+=======
+            
+    def market_make(self, result:Dict[str,List[Order]]):
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         orders: List[Order] = []
 
-        # TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
+        #TODO: IMPLEMENT SMARTER ORDER VOLUME CHOICE
 
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
         for backoff in range(1, 20):
     
             bv_ = int(self.market_make_buy_vol / (backoff))
@@ -355,18 +407,38 @@ class ProductTrader:
                 orders.append(Order(self.name, self.best_sell - 1, -sv_))
                 break
         
+=======
+        #this conditional assumes we market take the position we are missing out on here
+        #if (prod.best_buy < prod.trade_around and prod.best_sell > prod.trade_around):
+        
+        bv_ = int((self.pos_lim - self.curr_buy_vol) * self.mm_vol_r)
+        sv_ = int( -(self.pos_lim + self.curr_sell_vol) * self.mm_vol_r)
+
+
+        if (
+            self.gap >= self.gap_trigger and 
+            self.curr_pos < bv_ and 
+            self.curr_pos > sv_
+            ):
+
+            best_delta = min(self.gap//2 -1, self.best_delta)
+            orders.append(Order(self.name, self.best_buy + best_delta, bv_))
+            orders.append(Order(self.name, self.best_sell - best_delta , sv_))
+
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         if self.name in result:
             result[self.name].extend(orders)
         else:
             result[self.name] = orders
-
-    def balance(self, result: Dict[str, List[Order]]):
+            
+    def balance(self, result:Dict[str, List[Order]]):
         orders: List[Order] = []
         if (self.curr_pos != 0):
 
-            ##TODO: buy/sell at the farthest price from trade-around for balancing
-
+            ##TODO: buy/sell at the farthest price from trade-around for balancing 
+            best_delta = min(self.gap//2 -1, self.best_delta)
             if (self.curr_pos < 0):
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
                 orders.append(Order(self.name, self.best_buy + 1, -self.curr_pos))
                 # confusing, yes, but position < 0, and we are BUYING so we want to reduce our buying power
                 self.buying_power += self.curr_pos
@@ -374,16 +446,87 @@ class ProductTrader:
                 orders.append(Order(self.name, self.best_sell - 1, -self.curr_pos))
                 # confusing, yes, but position > 0, and we are SELLING so we want to reduce our selling power
                 self.selling_power -= self.curr_pos
+=======
+                orders.append(Order(self.name, self.best_buy + best_delta, -self.curr_pos))
+                self.curr_buy_vol += self.curr_pos
+            else:
+                orders.append(Order(self.name, self.best_sell - best_delta, -self.curr_pos))
+                self.curr_sell_vol += self.curr_pos
+>>>>>>> Stashed changes:algo_trades/r2submission.py
+
 
         if self.name in result:
             result[self.name].extend(orders)
         else:
             result[self.name] = orders
 
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
 class ResinTrader(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict, result:Dict[Symbol, List[Order]], ppw:int):
         super().__init__(state, traderData, 'RAINFOREST_RESIN', ppw)
 
+=======
+    def calc_vwaps(self) -> tuple[int, int, int]:
+        """
+        Returns the (best_buy, midprice, best_sell) using volume weighted average products
+        
+        does vwap on buy orders --> best buy
+        does vwap on sell orders --> best sell
+        avg buy/sell -> mid
+        """    
+        buy_sum = 0
+        buy_vol = 0
+        sell_sum = 0
+        sell_vol = 0
+        
+        if (len(self.od.buy_orders)):
+            for key, value in self.od.buy_orders.items():
+                buy_sum += key * value
+                buy_vol += value
+            best_buy = int(math.ceil(buy_sum / buy_vol))            
+        else:
+            best_buy = 0
+
+        if (len(self.od.sell_orders)):
+            for key, value in self.od.sell_orders.items():
+                sell_sum += key * value
+                sell_vol += value
+            best_sell = int(math.floor(sell_sum / sell_vol))
+        else:
+            best_sell = 0
+                
+        # TODO: Revaluate this
+        midprice = (best_buy + best_sell)//2 if best_buy and best_sell else -1
+
+        return (best_buy, midprice, best_sell)
+    
+    def update_td(self, trader_data):
+        """
+        Implement this in child and ONLY update trader_data[self.name]
+        """
+        pass
+
+
+
+class ResinTrader(ProductTrader):
+    def __init__(self, state:TradingState):
+        # super().__init__('RAINFOREST_RESIN')
+        self.name = 'RAINFOREST_RESIN'
+        # HARD SET VARS
+        self.trade_around = 10000
+        self.pos_lim = 50
+        
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+        self.od = state.order_depths[self.name]
+                
+        # Market Make
+        self.best_sell = min(self.od.sell_orders) if (len(self.od.sell_orders)) else self.trade_around
+        self.best_buy = max(self.od.buy_orders) if (len(self.od.buy_orders)) else self.trade_around
+        self.gap = self.best_sell - self.best_buy if self.best_buy and self.best_sell else -1
+        
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         # GRID SEARCHED
         self.mm_vol_r = 0.5
         self.mt_bv = 15
@@ -391,6 +534,7 @@ class ResinTrader(ProductTrader):
         self.gap_trigger = 4
         self.best_delta = 1
 
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
         # NOT GRID SEARCHED (but necessary for product trader)
         self.market_make_buy_vol = 15
         self.market_make_sell_vol = 15
@@ -401,23 +545,59 @@ class Kelp(ProductTrader):
         super().__init__(state, traderData, 'KELP', ppw)
 
         # OPTIMIZABLE VARS
+=======
+class Kelp(ProductTrader):
+    def __init__(self, state:TradingState):
+        super().__init__('KELP')
+        self.od = state.order_depths[self.name]
+        self.pos_lim = 50
+        
+        # Using "wvap" to find ideal best buy/sell
+        (self.best_buy, _, self.best_sell) = self.calc_vwaps()  
+        
+        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+        
+        #OPTIMIZABLE VARS
+>>>>>>> Stashed changes:algo_trades/r2submission.py
         # GRID SEARCHED
         self.mm_vol_r = 0.5
         self.gap_trigger = 2
         self.best_delta = 1
 
-        # NOT GRID SEARCHED (but nesc. for ts to work)
-        self.mm_bv = 15
-        self.mm_sv = -15
-
-
 class SquidInk(ProductTrader):
 
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
     def __init__(self, state: TradingState, traderData: Dict, result:Dict[Symbol, List[Order]], ppw:int):
         super().__init__(state, traderData, 'SQUID_INK', ppw)
 
         self.trade_around = self.moving_avg()
         #self.trade_around = self.moving_avg()
+=======
+    def __init__(self, state: TradingState, traderData: Dict):
+        super().__init__('SQUID_INK')
+        self.od = state.order_depths[self.name]
+        
+        # HARDCODED VARS
+        # TODO: Do we need this
+        # self.trade_around = 2000
+        self.pos_lim = 50
+
+        # Using "wvap" to find ideal best buy/sell
+        (self.best_buy, self.midprice, self.best_sell) = self.calc_vwaps()
+
+        # Retreives window and sets "fair" to moving avg
+        self.update_td(traderData, self.midprice)
+        self.trade_around = self.moving_avg()
+        
+        self.gap = (self.best_sell - self.best_buy) if (self.best_buy and self.best_sell) else -1
+        self.curr_pos = state.position.get(self.name, 0)
+        self.curr_sell_vol = 0
+        self.curr_buy_vol = 0
+>>>>>>> Stashed changes:algo_trades/r2submission.py
+
 
         # OPTIMIZABLE VARS
         # Market Making
@@ -429,7 +609,11 @@ class SquidInk(ProductTrader):
         # self.ma_vol_r = params['ma_vol_r']
         # self.fixed_threshold = params['fixed_threshold']
         # self.big_window_size = params['big_window_size']
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
     
+=======
+        
+>>>>>>> Stashed changes:algo_trades/r2submission.py
     def moving_avg(self):
 
         bw, sw = self.get_windows()
@@ -437,6 +621,7 @@ class SquidInk(ProductTrader):
             return
 
         return np.mean(bw)
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
 
     def get_windows(self):
         return self.prev_prices, self.prev_prices[-(self.prev_price_window // 2):]
@@ -446,12 +631,22 @@ class SquidInk(ProductTrader):
 
         if len(self.prev_prices) < self.prev_price_window:
             logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.prev_price_window}")
+=======
+    
+    def market_take(self, result: Dict[str, List[Order]]):
+        orders: List[Order] = []
+
+
+        if len(self.prev_prices) < self.big_window_size:
+            logger.print(f"Insufficient data: {len(self.prev_prices)}/{self.big_window_size}")
+>>>>>>> Stashed changes:algo_trades/r2submission.py
             return
 
         super().market_take(result)
 
 
 
+<<<<<<< Updated upstream:algo_trades/r2/r2_submission_refactored.py
 
 
 class Croissants(ProductTrader):
@@ -586,6 +781,27 @@ class Djembes (ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict, result:Dict[Symbol, List[Order]], ppw:int):
         super().__init__(state, traderData, 'DJEMBES', ppw)    
 
+=======
+    def update_td(self, traderData, new_mid_price):
+        """
+        For Squid Ink we maintain a sliding window
+        
+        """
+        self.prev_prices = traderData[self.name].get('prev_prices', [])
+        
+        if (len(self.prev_prices) == self.big_window_size):
+            self.prev_prices.pop(0)
+            
+        self.prev_prices.append(new_mid_price)
+        
+        traderData[self.name]['prev_prices'] = self.prev_prices
+        
+        return
+    
+
+    def get_windows(self):
+        return self.prev_prices, self.prev_prices[-(self.big_window_size//2):]
+>>>>>>> Stashed changes:algo_trades/r2submission.py
 
 
 class Picnic_Basket1(ProductTrader):
@@ -783,6 +999,7 @@ class Trader:
         kl.market_make(result)
 
         si.balance(result)
+        # si.market_take(result)
         si.market_make(result)
        
         jams.market_make(result)
