@@ -409,31 +409,34 @@ class options_trader():
         closest_strike = min(strike_candidates, key=lambda s: abs(s - self.underlying.midprice))
         atm_voucher = next(v for v in self.v_array if v.strike == closest_strike)
 
+        for v in self.v_array:
+            if v == atm_voucher:
+                continue
+            v.balance(result)
 
 
         iv = implied_volatility(atm_voucher.midprice, self.underlying.midprice, atm_voucher.strike, self.tte)
         
         curr_delta = delta(self.underlying.midprice, atm_voucher.strike, self.tte, iv)
 
-        if (timestamp == 0 or atm_voucher.curr_pos != atm_voucher.pos_lim):
-            execute_trade(result, atm_voucher, atm_voucher.best_sell, atm_voucher.pos_lim - atm_voucher.curr_pos)
+        if (timestamp == 0 or atm_voucher.curr_pos < (atm_voucher.pos_lim)):
+            execute_trade(result, atm_voucher, atm_voucher.best_sell, ((atm_voucher.pos_lim) - atm_voucher.curr_pos))
 
             target_underlying_pos = curr_delta * (atm_voucher.pos_lim - atm_voucher.curr_pos)
 
-            execute_trade(result, self.underlying, self.underlying.best_buy, -target_underlying_pos)
-            return
+            #execute_trade(result, self.underlying, self.underlying.best_buy, -target_underlying_pos)
         
-        target_underlying_pos = (curr_delta * atm_voucher.curr_pos)
-        delta_diff = (target_underlying_pos - self.underlying.curr_pos)
+        target_underlying_pos = - (curr_delta * atm_voucher.curr_pos)
+        delta_diff = target_underlying_pos - self.underlying.curr_pos
         logger.print(f"curr_delta = {curr_delta} delta_diff = {delta_diff}, iv = {iv}")
 
-        if (abs(delta_diff) >=1):
+        if (abs(delta_diff) >= 5):
             if delta_diff < 0:
-                #SELL HERE, CURR POS TOO MUCH
-                execute_trade(result, self.underlying, self.underlying.best_buy, delta_diff)
-            else:
                 #BUY HERE, CURR POS TOO LESS
-                execute_trade(result, self.underlying, self.underlying.best_sell, delta_diff)
+                execute_trade(result, self.underlying, self.underlying.best_buy, int(delta_diff))
+            else:
+                #SELL HERE, CURR POS TOO MUCH
+                execute_trade(result, self.underlying, self.underlying.best_sell , int(delta_diff))
 
 
 
