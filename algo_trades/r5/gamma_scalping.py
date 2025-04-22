@@ -202,7 +202,7 @@ class ProductTrader:
 
         # price vars
         self.prev_prices = []
-        self.prev_price_window = ppw if ppw != 0 else 101
+        self.prev_price_window = ppw
         self.best_buy = 0
         self.best_sell = 0
         self.midprice = 0
@@ -232,8 +232,47 @@ class ProductTrader:
         # Pull out whatever from trader_data #
         ######################################
         if ppw != -1:
-            self.get_prev_prices()
-            self.smooth_price = self.savgol_filter_manual(self.prev_prices)
+             self.get_prev_prices()
+             self.smooth_price = self.savgol_filter_manual(self.prev_prices)
+    def get_prev_prices(self) -> None:
+        if self.prev_price_window < 0:
+            return
+        prev_prices = self.trader_data.get('prev_prices', [])
+
+        if (len(prev_prices) > self.prev_price_window):
+            prev_prices.pop(0)
+
+        prev_prices.append(self.midprice)
+        self.prev_prices = prev_prices
+        self.trader_data['prev_prices'] = prev_prices
+    def savgol_filter_manual(self, a: list, window_size: int = 101, poly_order: int = 2) -> float:
+        """
+        Applies Savitzky-Golay filtering to the input list of midprices.
+
+        Parameters:
+            y (list): List of midprices, length must equal window_size.
+            window_size (int): Must be odd. The number of points to consider in the window.
+            poly_order (int): The order of the polynomial to fit (e.g., 2 = quadratic).
+
+        Returns:
+            float: The smoothed value at the center of the window.
+        """
+        "Length of input must match window_size"
+        if len(a) < self.prev_price_window:
+            return self.midprice
+
+        y = a[-self.prev_price_window:]
+        assert window_size % 2 == 1, "Window size must be odd"
+
+        half = window_size // 2
+        x = np.arange(-half, half + 1)  # e.g., [-50, ..., 0, ..., +50]
+        X = np.vander(x, poly_order + 1, increasing=True)  # Vandermonde matrix
+        X_pinv = np.linalg.pinv(X)  # Pseudo-inverse for least squares
+
+        coeffs = X_pinv @ np.array(y)
+        smoothed_val = coeffs[0]  # Value at center of polynomial (x=0)
+
+        return smoothed_val
     def calc_vwaps(self) -> tuple[int, int, int]:
         """
         Returns the (best_buy, midprice, best_sell) using volume weighted average products
@@ -296,11 +335,23 @@ class Volcanic_Rock(ProductTrader):
     def __init__(self, state: TradingState, traderData: Dict, result: Dict[Symbol, List[Order]], ppw: int):
         super().__init__(state, traderData, 'VOLCANIC_ROCK', ppw)
 
+        self.realized_vol = self.realized_vol(self.prev_prices)
+
+    def realized_vol(self, prices, periods_per_year=252):
+        if(len(prices) < 3):
+            return 0
+        prices = np.array(
+            prices
+        )
+        log_returns = np.diff(np.log(prices))
+        return np.std(log_returns, ddof=1) * np.sqrt(periods_per_year)
+
 class Voucher(ProductTrader):
     def __init__(self, name:Symbol, state: TradingState, traderData: Dict, result: Dict[Symbol, List[Order]], ppw: int):
         super().__init__(state, traderData, name, ppw)
 
         strike = 0
+        self.pos_lim = 200
 
         if (name == 'VOLCANIC_ROCK_VOUCHER_9500'):
             strike = 9500
@@ -401,65 +452,94 @@ class options_trader():
         self.underlying = underlying
         self.spot = self.underlying.midprice
 
-    
+    def gamma_scalp(self, timestamp: int, result: Dict[Symbol, List[Order]]):
+        vol_gap_tol = 2
 
-    def gamma_scalp(self, timestamp:int, result:Dict[Symbol, List[Order]]):
+        # Skip until you have enough data
+        if len(self.underlying.prev_prices) < 100:
+            return result
+
         logger.print(f'underlying mid = {self.underlying.midprice}')
         strike_candidates = [9500, 9750, 10000, 10250, 10500]
         closest_strike = min(strike_candidates, key=lambda s: abs(s - self.underlying.midprice))
         atm_voucher = next(v for v in self.v_array if v.strike == closest_strike)
 
+        # Balance other vouchers
         for v in self.v_array:
-            if v == atm_voucher:
-                continue
-            v.balance(result)
+            if v != atm_voucher:
+                v.balance(result)
 
-
+        # Recalculate IV and vol ratio
         iv = implied_volatility(atm_voucher.midprice, self.underlying.midprice, atm_voucher.strike, self.tte)
-        
+        realized_vol = max(self.underlying.realized_vol, 1e-6)
+        vol_ratio = iv / realized_vol
+
+
+        # If vol is too high, sell vouchers and hedge
+        logger.print(f"vol ratio = {vol_ratio:.2f}, iv = {iv:.4f}, realized_vol = {realized_vol:.4f}")
+        if vol_ratio > 30:
+            if vol_ratio > 40 and atm_voucher.curr_pos > -atm_voucher.pos_lim:
+                qty = -atm_voucher.pos_lim - atm_voucher.curr_pos  # move to full short
+                execute_trade(result, atm_voucher, atm_voucher.best_buy, qty)
+
+                curr_delta = delta(self.underlying.midprice, atm_voucher.strike, self.tte, iv)
+                hedge_qty = curr_delta * qty
+                hedge_price = self.underlying.best_sell if hedge_qty > 0 else self.underlying.best_buy
+                execute_trade(result, self.underlying, hedge_price, -hedge_qty)
+            return result
+
+        # Else: Normal gamma scalping
         curr_delta = delta(self.underlying.midprice, atm_voucher.strike, self.tte, iv)
 
-        if (timestamp == 0 or atm_voucher.curr_pos < (atm_voucher.pos_lim)):
-            execute_trade(result, atm_voucher, atm_voucher.best_sell, ((atm_voucher.pos_lim) - atm_voucher.curr_pos))
+        # Target a partial long voucher position (say 20%)
+        target_voucher_pos = 0.1 * atm_voucher.pos_lim
+        voucher_trade_qty = target_voucher_pos - atm_voucher.curr_pos
 
-            target_underlying_pos = curr_delta * (atm_voucher.pos_lim - atm_voucher.curr_pos)
+        if abs(voucher_trade_qty) >= 1:
+            voucher_price = atm_voucher.best_sell if voucher_trade_qty > 0 else atm_voucher.best_buy
+            execute_trade(result, atm_voucher, voucher_price, voucher_trade_qty)
 
-            #execute_trade(result, self.underlying, self.underlying.best_buy, -target_underlying_pos)
-        
-        target_underlying_pos = - (curr_delta * atm_voucher.curr_pos)
+            # Hedge only the change
+            hedge_qty = curr_delta * voucher_trade_qty
+            hedge_price = self.underlying.best_sell if hedge_qty > 0 else self.underlying.best_buy
+            execute_trade(result, self.underlying, hedge_price, -hedge_qty)
+
+        # Rebalance hedge if delta changed
+        target_underlying_pos = curr_delta * atm_voucher.curr_pos
         delta_diff = target_underlying_pos - self.underlying.curr_pos
-        logger.print(f"curr_delta = {curr_delta} delta_diff = {delta_diff}, iv = {iv}")
+        logger.print(f"curr_delta = {curr_delta:.4f}, delta_diff = {delta_diff:.2f}, iv = {iv:.4f}")
 
-        if (abs(delta_diff) >= 5):
-            if delta_diff < 0:
-                #BUY HERE, CURR POS TOO LESS
-                execute_trade(result, self.underlying, self.underlying.best_buy, int(delta_diff))
-            else:
-                #SELL HERE, CURR POS TOO MUCH
-                execute_trade(result, self.underlying, self.underlying.best_sell , int(delta_diff))
+        if abs(delta_diff) >= 2:
+            hedge_price = self.underlying.best_sell if delta_diff > 0 else self.underlying.best_buy
+            execute_trade(result, self.underlying, hedge_price, delta_diff)
+
+        return result
 
 
-
-
-        
-
-
-    
-    
 class Trader:
 
     # def __init__ (self, params:Dict = {}):
     #     self.params = params
-
-
-   
-
-
     def run(self, state: TradingState):
+
+        if state.traderData == '' or state.traderData == None:
+            traderData = {
+                'RAINFOREST_RESIN': {},
+                'KELP': {},
+                'SQUID_INK': {},
+                'CROISSANTS': {},
+                'JAMS': {},
+                'DJEMBES': {},
+                'PICNIC_BASKET1': {},
+                'PICNIC_BASKET2': {},
+                'VOLCANIC_ROCK': {}
+            }
+        else:
+            traderData = json.loads(state.traderData)
 
         result: Dict[str, List[Order]] = {}
 
-        vr = Volcanic_Rock(state, {}, result, -1)
+        vr = Volcanic_Rock(state, traderData, result, 101)
         voucher_9500 = Voucher('VOLCANIC_ROCK_VOUCHER_9500',state, {}, result, -1)
         voucher_9750 = Voucher('VOLCANIC_ROCK_VOUCHER_9750', state, {}, result, -1)
         voucher_10000 = Voucher('VOLCANIC_ROCK_VOUCHER_10000', state, {}, result, -1)
@@ -474,7 +554,7 @@ class Trader:
 
 
 
-        traderData = ''
+        traderData = json.dumps(traderData)
         conversions = 0
         logger.flush(state, result, conversions, traderData)
 
