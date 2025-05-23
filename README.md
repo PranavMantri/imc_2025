@@ -1,4 +1,6 @@
 # imc_2025
+## Results!
+We placed in the Top 2% in the world and 49th in the U.S. out of a total of 12,000 teams!
 
 ## Build Instructions
 
