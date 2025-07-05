@@ -2,6 +2,8 @@
 ## Results!
 We placed in the Top 2% in the world and 49th in the U.S. out of a total of 12,000 teams!
 
+Our code for each round can be found under algo_trades
+
 ## Build Instructions
 
 Download the back tester and follow the instructions to install it as a python package:
